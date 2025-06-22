@@ -124,7 +124,7 @@ impl EngineState {
 
         let handle = thread::spawn(move || {
             // This is where the engine "thinks". It calls our core logic function.
-            let best_move = next_move(&position_to_search);
+            let best_move = next_move(&position_to_search, 4);
 
             // Report the result back to the GUI.
             // A real engine might also send a ponder move.
