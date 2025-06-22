@@ -1,0 +1,8 @@
+[package]
+name = "chess_bot"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+shakmaty = "0.28.0"
+rand = "0.8"
