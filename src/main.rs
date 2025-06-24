@@ -1,5 +1,6 @@
 use shakmaty::uci::UciMove;
-use shakmaty::{Chess, Position};
+use shakmaty::{Chess, Color, Position};
+use std::collections::HashMap;
 use std::fs::OpenOptions;
 use std::io::{self, BufRead, Write};
 use std::sync::{
@@ -7,10 +8,12 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 use std::thread;
+use std::time::{Duration, Instant};
 
 mod engine;
 use engine::next_move;
 
+#[rustfmt::skip]
 mod engine_hyperparams;
 
 /// Holds the engine's state, primarily the current board position.
@@ -38,7 +41,7 @@ impl EngineState {
                 "uci" => self.handle_uci(),
                 "isready" => self.handle_isready(),
                 "position" => self.handle_position(&tokens[1..]),
-                "go" => self.handle_go(),
+                "go" => self.handle_go(&tokens[1..]),
                 "quit" => self.handle_quit(),
                 "stop" => self.handle_stop(),
                 "ucinewgame" => self.handle_ucinewgame(),
@@ -110,29 +113,98 @@ impl EngineState {
     }
 
     /// Starts calculating the best move for the current position.
-    fn handle_go(&mut self) {
+    fn handle_go(&mut self, tokens: &[&str]) {
         if self.is_thinking.load(Ordering::SeqCst) {
             // Ignore 'go' if already thinking, as per UCI spec.
             return;
         }
-
         self.is_thinking.store(true, Ordering::SeqCst);
+
+        let thinking_start_time = Instant::now();
+
+        let mut wtime: Option<u64> = None;
+        let mut btime: Option<u64> = None;
+
+        let mut i = 0;
+        while i < tokens.len() {
+            match tokens[i] {
+                "wtime" => {
+                    if let Some(val_str) = tokens.get(i + 1) {
+                        if let Ok(time) = val_str.parse::<u64>() {
+                            wtime = Some(time);
+                        }
+                        i += 2;
+                    } else {
+                        i += 1;
+                    }
+                }
+                "btime" => {
+                    if let Some(val_str) = tokens.get(i + 1) {
+                        if let Ok(time) = val_str.parse::<u64>() {
+                            btime = Some(time);
+                        }
+                        i += 2;
+                    } else {
+                        i += 1;
+                    }
+                }
+                // TODO: Parse other parameters like "depth", "nodes", "movetime", "infinite"
+                _ => {
+                    // Ignore unknown or unhandled tokens
+                    i += 1;
+                }
+            }
+        }
 
         // Clone necessary state for the thinking thread
         let position_to_search = self.pos.clone();
         let is_thinking_clone = self.is_thinking.clone();
+        let is_thinking_clone_b = self.is_thinking.clone();
+
+        let time = if position_to_search.turn() == Color::White {
+            wtime
+        } else {
+            btime
+        };
+
+        let target_think_time = match time {
+            Some(time) if time > 600_000 => Duration::from_secs(30), // Greater than 10 min
+            Some(time) if time > 180_000 => Duration::from_secs(10), // Greater than 5 min
+            Some(time) if time > 180_000 => Duration::from_millis(6000), // Greater than 3 min
+            Some(time) if time > 120_000 => Duration::from_millis(4000),  // Greater than 2 min
+            Some(time) if time > 60_000 => Duration::from_millis(2000),  // Greater than 1 min
+            Some(time) if time > 30_000 => Duration::from_millis(1000),  // Greater than 30 sec
+            Some(time) if time > 10_000 => Duration::from_millis(500),  // Greater than 10 sec
+            Some(time) if time > 5_000 => Duration::from_millis(250),  // Greater than 5 sec
+            _ => Duration::from_millis(100),
+        };
+        // let _ = log_to_file(&format!("Searching to depth {} @ time: {:?}", depth, time));
 
         let handle = thread::spawn(move || {
-            // This is where the engine "thinks". It calls our core logic function.
-            let best_move = next_move(&position_to_search, 4);
+            let mut best_move = next_move(&position_to_search, 1, &is_thinking_clone_b);
+            let mut depth: u64 = 2;
+            loop {
+                if !is_thinking_clone_b.load(Ordering::SeqCst) {
+                    break;
+                }
+                best_move = next_move(&position_to_search, depth, &is_thinking_clone_b);
+                depth += 1;
+            }
 
+            let time_taken = Instant::now() - thinking_start_time;
             // Report the result back to the GUI.
             // A real engine might also send a ponder move.
-            println!(
+            let best_move = format!(
                 "bestmove {}",
                 best_move.to_uci(shakmaty::CastlingMode::Standard)
             );
+            println!("{}", best_move);
+            let _ = log_to_file(&best_move);
+            let _ = log_to_file(&format!("Eval took {:#?}", time_taken));
+        });
 
+        let timer_handle = thread::spawn(move || {
+            thread::sleep(target_think_time);
             // Signal that thinking is finished.
             is_thinking_clone.store(false, Ordering::SeqCst);
         });
@@ -171,7 +243,7 @@ fn flush_stdout() {
     io::stdout().flush().expect("Failed to flush stdout");
 }
 
-fn log_to_file(message: &str) -> io::Result<()> {
+pub fn log_to_file(message: &str) -> io::Result<()> {
     // Open the file with options to create it if it doesn't exist,
     // to append to it, and to write to it.
     let mut file = OpenOptions::new()
