@@ -1,6 +1,6 @@
-use std::{collections::HashMap, sync::{atomic::AtomicBool, Arc}};
+use std::sync::{Arc, atomic::AtomicBool};
 
-use shakmaty::{zobrist::{Zobrist64, ZobristHash}, Chess, Color, Move, Outcome, Position, Role};
+use shakmaty::{Chess, Color, Move, Outcome, Position, Role};
 
 use crate::{engine_hyperparams, log_to_file};
 
@@ -20,18 +20,41 @@ pub fn next_move(position: &Chess, depth: u64, is_thinking: &Arc<AtomicBool>) ->
             }
             let mut new_position = position.clone();
             new_position.play_unchecked(**legal_move);
-            -negamax(&new_position, depth - 1, &mut nodes, &mut q_nodes, i64::MIN, i64::MAX, is_thinking)
+            -negamax(
+                &new_position,
+                depth - 1,
+                &mut nodes,
+                &mut q_nodes,
+                i64::MIN,
+                i64::MAX,
+                is_thinking,
+            )
         })
         .expect("No legal moves found");
-    log_to_file(&format!("Target Depth: {} | Searched: {} Nodes & {} Q-Nodes", depth, nodes, q_nodes)).unwrap();
+    log_to_file(&format!(
+        "Target Depth: {} | Searched: {} Nodes & {} Q-Nodes",
+        depth, nodes, q_nodes
+    ))
+    .unwrap();
     *best_move
 }
 
-fn negamax(position: &Chess, depth: u64, nodes: &mut u64, q_nodes: &mut u64, mut alpha: i64, beta: i64, is_thinking: &Arc<AtomicBool>) -> i64 {
+fn negamax(
+    position: &Chess,
+    depth: u64,
+    nodes: &mut u64,
+    q_nodes: &mut u64,
+    mut alpha: i64,
+    beta: i64,
+    is_thinking: &Arc<AtomicBool>,
+) -> i64 {
     *nodes += 1;
 
-    if depth == 0 || position.is_game_over() || !is_thinking.load(std::sync::atomic::Ordering::SeqCst) {
-        return evaluate(position);//q_search(position, q_nodes, alpha, beta);
+    if depth == 0
+        || position.is_game_over()
+        || !is_thinking.load(std::sync::atomic::Ordering::SeqCst)
+    {
+        return evaluate(position);
     }
 
     let mut max_score = i64::MIN;
@@ -42,7 +65,15 @@ fn negamax(position: &Chess, depth: u64, nodes: &mut u64, q_nodes: &mut u64, mut
         let mut new_pos = position.clone();
         new_pos.play_unchecked(m);
 
-        let score = -negamax(&new_pos, depth - 1, nodes, q_nodes, -beta, -alpha, is_thinking);
+        let score = -negamax(
+            &new_pos,
+            depth - 1,
+            nodes,
+            q_nodes,
+            -beta,
+            -alpha,
+            is_thinking,
+        );
 
         if score > max_score {
             max_score = score;
@@ -58,19 +89,20 @@ fn negamax(position: &Chess, depth: u64, nodes: &mut u64, q_nodes: &mut u64, mut
     max_score
 }
 
+/*
 fn q_search(position: &Chess, q_nodes: &mut u64, mut alpha: i64, beta: i64) -> i64 {
     *q_nodes += 1;
-    let score = evaluate(position);
-    if score > alpha {
-        alpha = score;
-    }
-    if alpha >= beta {
-        return beta;
+    if position.is_game_over() {
+        return evaluate(position);
     }
 
     let mut max_score = i64::MIN;
     let mut cap_moves = position.legal_moves();
     cap_moves.retain(|mov| mov.is_capture());
+
+    if cap_moves.is_empty() {
+        return evaluate(position);
+    }
 
     for m in cap_moves {
         let mut new_pos = position.clone();
@@ -91,7 +123,8 @@ fn q_search(position: &Chess, q_nodes: &mut u64, mut alpha: i64, beta: i64) -> i
 
     max_score
 }
-
+*/
+ 
 /// Higher result is a better move
 fn quick_score_move_for_sort(move_to_score: &Move, position: &Chess) -> i64 {
     let mut score = 0;
@@ -123,6 +156,7 @@ fn quick_score_move_for_sort(move_to_score: &Move, position: &Chess) -> i64 {
     // Reverse order since rust sorts moves from lowest score to highest score
     -score
 }
+
 
 /// Calculates a chess position's material score from the players's perspective.
 /// A positive score means the player is ahead; a negative score means the opponent is ahead.
