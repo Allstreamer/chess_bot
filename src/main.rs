@@ -53,7 +53,7 @@ impl EngineState {
 
     /// Responds to the "uci" command by identifying the engine and sending supported options.
     fn handle_uci(&self) {
-        println!("id name AllRustBot_NoQ");
+        println!("id name AllRustBot_base_iter_fix2");
         println!("id author All");
         // Example of sending an option. A real engine would list all its options here.
         // println!("option name Hash type spin default 16 min 1 max 1024");
@@ -166,17 +166,21 @@ impl EngineState {
             btime
         };
 
-        let target_think_time = match time {
-            Some(time) if time > 600_000 => Duration::from_secs(30), // Greater than 10 min
-            Some(time) if time > 180_000 => Duration::from_secs(10), // Greater than 5 min
-            Some(time) if time > 180_000 => Duration::from_millis(6000), // Greater than 3 min
-            Some(time) if time > 120_000 => Duration::from_millis(4000), // Greater than 2 min
-            Some(time) if time > 60_000 => Duration::from_millis(2000), // Greater than 1 min
-            Some(time) if time > 30_000 => Duration::from_millis(1000), // Greater than 30 sec
-            Some(time) if time > 10_000 => Duration::from_millis(500), // Greater than 10 sec
-            Some(time) if time > 5_000 => Duration::from_millis(250), // Greater than 5 sec
-            _ => Duration::from_millis(100),
-        };
+        let target_think_time = Duration::from_millis(match time {
+            Some(v) => (v as f64 * 0.10) as u64,
+            None => 100,
+        });
+        // let target_think_time = match time {
+        //     Some(time) if time > 600_000 => Duration::from_secs(30), // Greater than 10 min
+        //     Some(time) if time > 180_000 => Duration::from_secs(10), // Greater than 5 min
+        //     Some(time) if time > 180_000 => Duration::from_millis(6000), // Greater than 3 min
+        //     Some(time) if time > 120_000 => Duration::from_millis(4000), // Greater than 2 min
+        //     Some(time) if time > 60_000 => Duration::from_millis(2000), // Greater than 1 min
+        //     Some(time) if time > 30_000 => Duration::from_millis(1000), // Greater than 30 sec
+        //     Some(time) if time > 10_000 => Duration::from_millis(500), // Greater than 10 sec
+        //     Some(time) if time > 5_000 => Duration::from_millis(250), // Greater than 5 sec
+        //     _ => Duration::from_millis(100),
+        // };
         // let _ = log_to_file(&format!("Searching to depth {} @ time: {:?}", depth, time));
 
         let handle = thread::spawn(move || {

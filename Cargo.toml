@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 shakmaty = "0.28.0"
 rand = "0.8"
+arrayvec = "0.7.6"

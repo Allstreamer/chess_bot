@@ -2,3 +2,8 @@
 /lichess-bot
 config.yml
 /playground
+*.epd
+*.bin
+chess_bot_*
+cutechess-cli
+log.txt

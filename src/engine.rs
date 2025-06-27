@@ -1,12 +1,14 @@
-use std::sync::{Arc, atomic::AtomicBool};
+use std::{cmp::Reverse, sync::{atomic::AtomicBool, Arc}};
 
+use arrayvec::ArrayVec;
 use shakmaty::{Chess, Color, Move, Outcome, Position, Role};
 
-use crate::{engine_hyperparams, log_to_file};
+use crate::{engine_hyperparams::{self}, log_to_file};
 
 /// Returns the best move for the current position using piece count evaluation.
 pub fn next_move(position: &Chess, depth: u64, is_thinking: &Arc<AtomicBool>) -> Move {
-    let mut legal_moves = position.legal_moves(); // Get all legal moves
+    let mut legal_moves = position.legal_moves();
+
     legal_moves.sort_by_key(|move_to_score| quick_score_move_for_sort(move_to_score, position));
 
     // Find the move that maximizes the evaluation (piece count)
@@ -89,50 +91,14 @@ fn negamax(
     max_score
 }
 
-/*
-fn q_search(position: &Chess, q_nodes: &mut u64, mut alpha: i64, beta: i64) -> i64 {
-    *q_nodes += 1;
-    if position.is_game_over() {
-        return evaluate(position);
-    }
-
-    let mut max_score = i64::MIN;
-    let mut cap_moves = position.legal_moves();
-    cap_moves.retain(|mov| mov.is_capture());
-
-    if cap_moves.is_empty() {
-        return evaluate(position);
-    }
-
-    for m in cap_moves {
-        let mut new_pos = position.clone();
-        new_pos.play_unchecked(m);
-
-        let score = -q_search(&new_pos, q_nodes, -beta, -alpha);
-
-        if score > max_score {
-            max_score = score;
-        }
-        if max_score > alpha {
-            alpha = max_score;
-        }
-        if alpha >= beta {
-            break;
-        }
-    }
-
-    max_score
-}
-*/
- 
 /// Higher result is a better move
 fn quick_score_move_for_sort(move_to_score: &Move, position: &Chess) -> i64 {
     let mut score = 0;
 
     // Prioritize moves that capture high value pieces with low value pieces
     if let Some(captured_piece) = move_to_score.capture() {
-        score = 10
-            * (get_piece_base_score(move_to_score.role()) - get_piece_base_score(captured_piece));
+        score = (10
+            * get_piece_base_score(move_to_score.role())) - get_piece_base_score(captured_piece);
     }
 
     // Filter up Promotions
@@ -181,15 +147,6 @@ fn evaluate(position: &Chess) -> i64 {
 
     let board = position.board();
 
-    /*
-    let player_material = board.material_side(position.turn()).zip_role().iter().map(|(role, count)| {
-        get_score(*role) * *count as i64
-    }).sum::<i64>();
-
-    let opponent_material = board.material_side(position.turn().other()).zip_role().iter().map(|(role, count)| {
-        get_score(*role) * *count as i64
-    }).sum::<i64>();
-    */
     let piece_count = board.iter().len();
     for (square, piece) in board {
         let mut tmp_score = get_piece_base_score(piece.role);
@@ -222,10 +179,43 @@ fn evaluate(position: &Chess) -> i64 {
             };
     }
 
-    // total_score = player_material - opponent_material;
-
     total_score
 }
+
+// fn end_game_king_bonuses(position: &Chess) -> i64 {
+//     let board = position.board();
+//     let player_king_square = board.king_of(position.turn()).unwrap();
+//     let opponent_king_square = board.king_of(position.turn().other()).unwrap();
+
+//     // Calculate the distance between the two kings
+//     let kings_distance = (player_king_square.file() as i64 - opponent_king_square.file() as i64).abs()
+//         + (player_king_square.rank() as i64 - opponent_king_square.rank() as i64).abs();
+
+//     // Calculate a secondary score based on opponent king distance from center
+//     let opponent_king_center_distance = 
+//     i64::max(3 - opponent_king_square.file() as i64, opponent_king_square.file() as i64 - 4)
+//         + i64::max(3 - opponent_king_square.rank() as i64, opponent_king_square.rank() as i64 - 4);
+
+//     ((14 - kings_distance) + opponent_king_center_distance) * 10
+// }
+
+// fn get_material_advantage(position: &Chess) -> i64 {
+//     let board = position.board();
+
+//     let player_material = board.material_side(position.turn()).zip_role().iter().map(|(role, count)| {
+//         get_piece_base_score(*role) * *count as i64
+//     }).sum::<i64>();
+
+//     let opponent_material = board.material_side(position.turn().other()).zip_role().iter().map(|(role, count)| {
+//         get_piece_base_score(*role) * *count as i64
+//     }).sum::<i64>();
+
+//     player_material - opponent_material
+// }
+
+// fn end_game_weight(position: &Chess) -> f64 {
+//     get_material_advantage(position).abs() as f64 / TOTAL_POSSIBLE_MATERIAL as f64 
+// }
 
 /// Returns the score of a piece based on its role. The score is used for evaluation.
 fn get_piece_base_score(role: Role) -> i64 {
