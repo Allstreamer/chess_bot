@@ -53,7 +53,7 @@ impl EngineState {
 
     /// Responds to the "uci" command by identifying the engine and sending supported options.
     fn handle_uci(&self) {
-        println!("id name AllRustBot_base_iter_fix2");
+        println!("id name AllRustBot");
         println!("id author All");
         // Example of sending an option. A real engine would list all its options here.
         // println!("option name Hash type spin default 16 min 1 max 1024");
@@ -167,7 +167,7 @@ impl EngineState {
         };
 
         let target_think_time = Duration::from_millis(match time {
-            Some(v) => (v as f64 * 0.10) as u64,
+            Some(v) => (v as f64 * 0.05) as u64,
             None => 100,
         });
         // let target_think_time = match time {

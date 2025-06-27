@@ -1,9 +1,13 @@
-use std::{cmp::Reverse, sync::{atomic::AtomicBool, Arc}};
+use std::{
+    sync::{Arc, atomic::AtomicBool},
+};
 
-use arrayvec::ArrayVec;
 use shakmaty::{Chess, Color, Move, Outcome, Position, Role};
 
-use crate::{engine_hyperparams::{self}, log_to_file};
+use crate::{
+    engine_hyperparams::{self},
+    log_to_file,
+};
 
 /// Returns the best move for the current position using piece count evaluation.
 pub fn next_move(position: &Chess, depth: u64, is_thinking: &Arc<AtomicBool>) -> Move {
@@ -97,8 +101,8 @@ fn quick_score_move_for_sort(move_to_score: &Move, position: &Chess) -> i64 {
 
     // Prioritize moves that capture high value pieces with low value pieces
     if let Some(captured_piece) = move_to_score.capture() {
-        score = (10
-            * get_piece_base_score(move_to_score.role())) - get_piece_base_score(captured_piece);
+        score = (10 * get_piece_base_score(move_to_score.role()))
+            - get_piece_base_score(captured_piece);
     }
 
     // Filter up Promotions
@@ -122,7 +126,6 @@ fn quick_score_move_for_sort(move_to_score: &Move, position: &Chess) -> i64 {
     // Reverse order since rust sorts moves from lowest score to highest score
     -score
 }
-
 
 /// Calculates a chess position's material score from the players's perspective.
 /// A positive score means the player is ahead; a negative score means the opponent is ahead.
@@ -192,7 +195,7 @@ fn evaluate(position: &Chess) -> i64 {
 //         + (player_king_square.rank() as i64 - opponent_king_square.rank() as i64).abs();
 
 //     // Calculate a secondary score based on opponent king distance from center
-//     let opponent_king_center_distance = 
+//     let opponent_king_center_distance =
 //     i64::max(3 - opponent_king_square.file() as i64, opponent_king_square.file() as i64 - 4)
 //         + i64::max(3 - opponent_king_square.rank() as i64, opponent_king_square.rank() as i64 - 4);
 
@@ -214,7 +217,7 @@ fn evaluate(position: &Chess) -> i64 {
 // }
 
 // fn end_game_weight(position: &Chess) -> f64 {
-//     get_material_advantage(position).abs() as f64 / TOTAL_POSSIBLE_MATERIAL as f64 
+//     get_material_advantage(position).abs() as f64 / TOTAL_POSSIBLE_MATERIAL as f64
 // }
 
 /// Returns the score of a piece based on its role. The score is used for evaluation.
