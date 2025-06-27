@@ -10,10 +10,10 @@ use crate::{
 };
 
 /// Returns the best move for the current position using piece count evaluation.
-pub fn next_move(position: &Chess, depth: u64, is_thinking: &Arc<AtomicBool>) -> Move {
+pub fn next_move(position: &Chess, depth: u64, is_thinking: &Arc<AtomicBool>, last_best_move: Option<&Move>) -> Move {
     let mut legal_moves = position.legal_moves();
 
-    legal_moves.sort_by_key(|move_to_score| quick_score_move_for_sort(move_to_score, position));
+    legal_moves.sort_by_key(|move_to_score| quick_score_move_for_sort(move_to_score, position, last_best_move));
 
     // Find the move that maximizes the evaluation (piece count)
     let mut nodes = 0;
@@ -65,7 +65,7 @@ fn negamax(
 
     let mut max_score = i64::MIN;
     let mut legal_moves = position.legal_moves();
-    legal_moves.sort_by_key(|move_to_score| quick_score_move_for_sort(move_to_score, position));
+    legal_moves.sort_by_key(|move_to_score| quick_score_move_for_sort(move_to_score, position, None));
 
     for m in legal_moves {
         let mut new_pos = position.clone();
@@ -96,8 +96,15 @@ fn negamax(
 }
 
 /// Higher result is a better move
-fn quick_score_move_for_sort(move_to_score: &Move, position: &Chess) -> i64 {
+fn quick_score_move_for_sort(move_to_score: &Move, position: &Chess, last_best_move: Option<&Move>) -> i64 {
     let mut score = 0;
+    
+    if let Some(last_move) = last_best_move {
+        // If the move is the same as the last best move, give it a higher score
+        if move_to_score == last_move {
+            score += 1000; // Arbitrary high value to prioritize this move
+        }
+    }
 
     // Prioritize moves that capture high value pieces with low value pieces
     if let Some(captured_piece) = move_to_score.capture() {
