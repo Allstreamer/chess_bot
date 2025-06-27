@@ -1,2 +1,4 @@
-- [ ] Move Sorting
-- 
+- [ ] Tune Endgame phase detection
+- [ ] Tune Piece-Square Tables
+- [ ] Tune Piece Values
+- [ ] Tune 

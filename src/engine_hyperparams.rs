@@ -7,6 +7,7 @@ pub const ROOK_VALUE: i64 =                     500;
 pub const QUEEN_VALUE: i64 =                    900;
 pub const KING_VALUE: i64 =                   20000;
 pub const MATE_SCORE: i64 =           1_000_000_000;
+//   i64  Max                9_223_372_036_854_775_807
 
 // pub const TOTAL_POSSIBLE_MATERIAL: i64 = 
 //     (8 * PAWN_VALUE) +
