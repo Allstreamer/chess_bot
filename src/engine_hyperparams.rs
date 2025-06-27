@@ -6,8 +6,10 @@ pub const BISHOP_VALUE: i64 =                   330;
 pub const ROOK_VALUE: i64 =                     500;
 pub const QUEEN_VALUE: i64 =                    900;
 pub const KING_VALUE: i64 =                   20000;
-pub const MATE_SCORE: i64 =           1_000_000_000;
+pub const MATE_SCORE: i64 =             100_000_000;
 //   i64  Max                9_223_372_036_854_775_807
+pub const POSITIVE_INFINITY: i64 =  9_999_999_999_999;
+pub const NEGATIVE_INFINITY: i64 = -POSITIVE_INFINITY;
 
 // pub const TOTAL_POSSIBLE_MATERIAL: i64 = 
 //     (8 * PAWN_VALUE) +
