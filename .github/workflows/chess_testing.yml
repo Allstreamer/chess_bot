@@ -3,7 +3,7 @@ name: Rust Chess Engine CI
 on:
   # Run on pushes to the master branch
   push:
-    branches: [ "master" ] # CHANGED: "main" is now "master"
+    branches: [ "master" ]
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
@@ -27,9 +27,22 @@ jobs:
         ref: ${{ github.event.before }}
         path: 'old_engine'
 
+    # --- NEW: Cache step for the cutechess-cli executable ---
+    - name: Cache cutechess-cli build
+      id: cache-cutechess
+      uses: actions/cache@v4
+      with:
+        # The path to the file we want to cache
+        path: ./cutechess-cli
+        # The key to identify the cache. If this key matches, the cache is restored.
+        key: cutechess-v1.4.0-${{ runner.os }}
+
+    # --- UPDATED: This build step will now be skipped if the cache was hit ---
     - name: Install and Build cutechess-cli v1.4.0
-      id: setup_cutechess
+      # This condition checks the output of the caching step above.
+      if: steps.cache-cutechess.outputs.cache-hit != 'true'
       run: |
+        echo "Cache miss. Building cutechess-cli from source..."
         echo "Installing Cute Chess dependencies..."
         sudo apt-get update -y
         sudo apt-get install -y git build-essential cmake qttools5-dev qtbase5-dev libqt5svg5-dev
@@ -62,8 +75,6 @@ jobs:
         
     - name: Download opening book
       run: |
-        # NOTE: This step depends on an external URL. For maximum reliability, consider forking
-        # the book's repository or adding the book to your own repo using Git LFS.
         echo "Downloading opening book..."
         wget -O gm2001.bin https://github.com/gmcheems-org/free-opening-books/raw/main/books/bin/gm2001.bin
 
@@ -81,4 +92,21 @@ jobs:
         -engine cmd=./old_engine/target/release/chess_bot name=OldCommit-${{ env.OLD_COMMIT_SHA }} \
         -each proto=uci tc=inf/1+0.1 book="./gm2001.bin" bookdepth=4 \
         -games 2 -rounds 2500 -repeat 2 -maxmoves 200 \
-        -sprt elo0=0 elo1=10 alpha=0.05
+        -sprt elo0=0 elo1=10 alpha=0.05 beta=0.05 \
+        -concurrency 2 \
+        -ratinginterval 10 -pgnout games.pgn | tee cutechess_output.txt
+      continue-on-error: true
+
+    - name: Check SPRT results
+      run: |
+        echo "Analyzing SPRT results..."
+        if grep -q "SPRT: H1 accepted" cutechess_output.txt; then
+          echo "Result: PASSED. New commit is statistically stronger."
+          exit 0
+        elif grep -q "SPRT: H0 accepted" cutechess_output.txt; then
+          echo "Result: FAILED. New commit is not statistically stronger."
+          exit 1
+        else
+          echo "Result: INCONCLUSIVE. The SPRT test did not finish within the game limit."
+          exit 1
+        fi
