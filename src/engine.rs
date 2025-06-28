@@ -22,7 +22,7 @@ enum TranspositionHashType {
 struct TranspositionInformation {
     depth: u64,
     value: i64,
-    // best_move: Move,
+    best_move: Option<Move>,
     transposition_type: TranspositionHashType,
 }
 
@@ -80,10 +80,18 @@ fn pv_search(
 ) -> i64 {
     let mut transposition_type = TranspositionHashType::Alpha;
     let zobrist_hash = position.zobrist_hash::<Zobrist64>(shakmaty::EnPassantMode::Legal);
+    let mut best_cached_move = None;
 
-    if let Some(val) = probe_hash(transposition_table, zobrist_hash, depth, alpha, beta) {
-        return val;
+    match probe_hash(transposition_table, zobrist_hash, depth, alpha, beta) {
+        HashProbeOption::Some(val) => {
+            return val;
+        },
+        HashProbeOption::Move(mv) =>  {
+            best_cached_move = Some(mv);
+        },
+        _ => {}
     }
+
     *nodes += 1;
 
     if depth == 0
@@ -97,13 +105,15 @@ fn pv_search(
             depth,
             val,
             TranspositionHashType::Exact,
+            None,
         );
         return val;
     }
 
     let mut legal_moves = position.legal_moves();
     legal_moves
-        .sort_by_key(|move_to_score| quick_score_move_for_sort(move_to_score, position, None));
+        .sort_by_key(|move_to_score| quick_score_move_for_sort(move_to_score, position, best_cached_move.as_ref()));
+    let mut best_move = None;
 
     for m in legal_moves {
         let mut new_pos = position.clone();
@@ -126,12 +136,14 @@ fn pv_search(
                 depth,
                 beta,
                 TranspositionHashType::Beta,
+                best_move,
             );
             return beta;
         }
         if score > alpha {
             transposition_type = TranspositionHashType::Exact;
             alpha = score;
+            best_move = Some(m);
         }
     }
 
@@ -141,6 +153,7 @@ fn pv_search(
         depth,
         alpha,
         transposition_type,
+        best_move,
     );
     alpha
 }
@@ -198,32 +211,39 @@ fn quiesce(
     best_value
 }
 
+enum HashProbeOption {
+    Some(i64),
+    Move(Move),
+    None,
+}
 fn probe_hash(
     transposition_table: &mut HashMap<Zobrist64, TranspositionInformation>,
     zobrist_hash: Zobrist64,
     depth: u64,
     alpha: i64,
     beta: i64,
-) -> Option<i64> {
+) -> HashProbeOption {
     let info_option = transposition_table.get(&zobrist_hash);
 
     if let Some(info) = info_option {
         if info.depth >= depth {
             if info.transposition_type == TranspositionHashType::Exact {
-                return Some(info.value);
+                return HashProbeOption::Some(info.value);
             }
             if (info.transposition_type == TranspositionHashType::Alpha) && (info.value <= alpha) {
-                return Some(alpha);
+                return HashProbeOption::Some(alpha);
             }
             if (info.transposition_type == TranspositionHashType::Beta) && (info.value >= beta) {
-                return Some(beta);
+                return HashProbeOption::Some(beta);
             }
         }
-        // Not sure how to implment yet so leaving out
-        // remember_best_move(); <- Tell move sort to search best move from last gen first
+        //  Tell move sort to search best move from last gen first
+        if let Some(best_move) = info.best_move {
+            return HashProbeOption::Move(best_move);
+        }
     }
 
-    None
+    HashProbeOption::None
 }
 
 fn record_hash(
@@ -232,6 +252,7 @@ fn record_hash(
     depth: u64,
     value: i64,
     transposition_type: TranspositionHashType,
+    best_move: Option<Move>,
 ) {
     transposition_table.insert(
         zobrist_hash,
@@ -239,6 +260,7 @@ fn record_hash(
             depth,
             value,
             transposition_type,
+            best_move,
         },
     );
 }
@@ -340,26 +362,29 @@ fn evaluate(position: &Chess) -> i64 {
                 -1
             };
     }
+    if piece_count <= 10 {
+        total_score += end_game_king_bonuses(position);
+    }
 
     total_score
 }
 
-// fn end_game_king_bonuses(position: &Chess) -> i64 {
-//     let board = position.board();
-//     let player_king_square = board.king_of(position.turn()).unwrap();
-//     let opponent_king_square = board.king_of(position.turn().other()).unwrap();
+fn end_game_king_bonuses(position: &Chess) -> i64 {
+    let board = position.board();
+    let player_king_square = board.king_of(position.turn()).unwrap();
+    let opponent_king_square = board.king_of(position.turn().other()).unwrap();
 
-//     // Calculate the distance between the two kings
-//     let kings_distance = (player_king_square.file() as i64 - opponent_king_square.file() as i64).abs()
-//         + (player_king_square.rank() as i64 - opponent_king_square.rank() as i64).abs();
+    // Calculate the distance between the two kings
+    let kings_distance = (player_king_square.file() as i64 - opponent_king_square.file() as i64).abs()
+        + (player_king_square.rank() as i64 - opponent_king_square.rank() as i64).abs();
 
-//     // Calculate a secondary score based on opponent king distance from center
-//     let opponent_king_center_distance =
-//     POSITIVE_INFINITY(3 - opponent_king_square.file() as i64, opponent_king_square.file() as i64 - 4)
-//         + POSITIVE_INFINITY(3 - opponent_king_square.rank() as i64, opponent_king_square.rank() as i64 - 4);
+    // Calculate a secondary score based on opponent king distance from center
+    let opponent_king_center_distance =
+    i64::max(3 - opponent_king_square.file() as i64, opponent_king_square.file() as i64 - 4)
+        + i64::max(3 - opponent_king_square.rank() as i64, opponent_king_square.rank() as i64 - 4);
 
-//     ((14 - kings_distance) + opponent_king_center_distance) * 10
-// }
+    ((14 - kings_distance) + opponent_king_center_distance) * 10
+}
 
 // fn get_material_advantage(position: &Chess) -> i64 {
 //     let board = position.board();
