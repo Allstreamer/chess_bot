@@ -1,8 +1,12 @@
 use std::{
-    collections::HashMap, sync::{atomic::AtomicBool, Arc}
+    collections::HashMap,
+    sync::{Arc, atomic::AtomicBool},
 };
 
-use shakmaty::{zobrist::{Zobrist64, ZobristHash}, Chess, Color, Move, Outcome, Position, Role};
+use shakmaty::{
+    Chess, Color, Move, Outcome, Position, Role,
+    zobrist::{Zobrist64, ZobristHash},
+};
 
 use crate::{
     engine_hyperparams::{self, NEGATIVE_INFINITY, POSITIVE_INFINITY},
@@ -23,15 +27,21 @@ struct TranspositionInformation {
 }
 
 /// Returns the best move for the current position using piece count evaluation.
-pub fn next_move(position: &Chess, depth: u64, is_thinking: &Arc<AtomicBool>, last_best_move: Option<&Move>) -> Move {
+pub fn next_move(
+    position: &Chess,
+    depth: u64,
+    is_thinking: &Arc<AtomicBool>,
+    last_best_move: Option<&Move>,
+) -> Move {
     let mut legal_moves = position.legal_moves();
-    legal_moves.sort_by_key(|move_to_score| quick_score_move_for_sort(move_to_score, position, last_best_move));
+    legal_moves.sort_by_key(|move_to_score| {
+        quick_score_move_for_sort(move_to_score, position, last_best_move)
+    });
 
     let mut transposition_table: HashMap<Zobrist64, TranspositionInformation> = HashMap::new();
 
     // Find the move that maximizes the evaluation (piece count)
     let mut nodes = 0;
-    let mut q_nodes = 0;
     let best_move = legal_moves
         .iter()
         .max_by_key(|legal_move| {
@@ -44,17 +54,16 @@ pub fn next_move(position: &Chess, depth: u64, is_thinking: &Arc<AtomicBool>, la
                 &new_position,
                 depth - 1,
                 &mut nodes,
-                &mut q_nodes,
                 NEGATIVE_INFINITY,
                 POSITIVE_INFINITY,
                 is_thinking,
-                &mut transposition_table
+                &mut transposition_table,
             )
         })
         .expect("No legal moves found");
     log_to_file(&format!(
-        "Target Depth: {} | Searched: {} Nodes & {} Q-Nodes",
-        depth, nodes, q_nodes
+        "Target Depth: {} | Searched: {} Nodes",
+        depth, nodes
     ))
     .unwrap();
     *best_move
@@ -64,11 +73,10 @@ fn negamax(
     position: &Chess,
     depth: u64,
     nodes: &mut u64,
-    q_nodes: &mut u64,
     mut alpha: i64,
     beta: i64,
     is_thinking: &Arc<AtomicBool>,
-    transposition_table: &mut HashMap<Zobrist64, TranspositionInformation>
+    transposition_table: &mut HashMap<Zobrist64, TranspositionInformation>,
 ) -> i64 {
     let mut transposition_type = TranspositionHashType::Alpha;
     let zobrist_hash = position.zobrist_hash::<Zobrist64>(shakmaty::EnPassantMode::Legal);
@@ -83,12 +91,19 @@ fn negamax(
         || !is_thinking.load(std::sync::atomic::Ordering::SeqCst)
     {
         let val = evaluate(position);
-        record_hash(transposition_table, zobrist_hash, depth, val, TranspositionHashType::Exact);
+        record_hash(
+            transposition_table,
+            zobrist_hash,
+            depth,
+            val,
+            TranspositionHashType::Exact,
+        );
         return val;
     }
 
     let mut legal_moves = position.legal_moves();
-    legal_moves.sort_by_key(|move_to_score| quick_score_move_for_sort(move_to_score, position, None));
+    legal_moves
+        .sort_by_key(|move_to_score| quick_score_move_for_sort(move_to_score, position, None));
 
     for m in legal_moves {
         let mut new_pos = position.clone();
@@ -98,15 +113,20 @@ fn negamax(
             &new_pos,
             depth - 1,
             nodes,
-            q_nodes,
             -beta,
             -alpha,
             is_thinking,
-            transposition_table
+            transposition_table,
         );
 
         if score >= beta {
-            record_hash(transposition_table, zobrist_hash, depth, beta, TranspositionHashType::Beta);
+            record_hash(
+                transposition_table,
+                zobrist_hash,
+                depth,
+                beta,
+                TranspositionHashType::Beta,
+            );
             return beta;
         }
         if score > alpha {
@@ -115,11 +135,23 @@ fn negamax(
         }
     }
 
-    record_hash(transposition_table, zobrist_hash, depth, alpha, transposition_type);
+    record_hash(
+        transposition_table,
+        zobrist_hash,
+        depth,
+        alpha,
+        transposition_type,
+    );
     alpha
 }
 
-fn probe_hash(transposition_table: &mut HashMap<Zobrist64, TranspositionInformation>, zobrist_hash: Zobrist64, depth: u64, alpha: i64, beta: i64) -> Option<i64> {
+fn probe_hash(
+    transposition_table: &mut HashMap<Zobrist64, TranspositionInformation>,
+    zobrist_hash: Zobrist64,
+    depth: u64,
+    alpha: i64,
+    beta: i64,
+) -> Option<i64> {
     let info_option = transposition_table.get(&zobrist_hash);
 
     if let Some(info) = info_option {
@@ -136,23 +168,36 @@ fn probe_hash(transposition_table: &mut HashMap<Zobrist64, TranspositionInformat
         }
         // Not sure how to implment yet so leaving out
         // remember_best_move(); <- Tell move sort to search best move from last gen first
-    } 
+    }
 
     None
 }
 
-fn record_hash(transposition_table: &mut HashMap<Zobrist64, TranspositionInformation>, zobrist_hash: Zobrist64, depth: u64, value: i64, transposition_type: TranspositionHashType) {
-    transposition_table.insert(zobrist_hash, TranspositionInformation { 
-        depth: depth, 
-        value: value, 
-        transposition_type: transposition_type 
-    });
+fn record_hash(
+    transposition_table: &mut HashMap<Zobrist64, TranspositionInformation>,
+    zobrist_hash: Zobrist64,
+    depth: u64,
+    value: i64,
+    transposition_type: TranspositionHashType,
+) {
+    transposition_table.insert(
+        zobrist_hash,
+        TranspositionInformation {
+            depth,
+            value,
+            transposition_type,
+        },
+    );
 }
 
 /// Higher result is a better move
-fn quick_score_move_for_sort(move_to_score: &Move, position: &Chess, last_best_move: Option<&Move>) -> i64 {
+fn quick_score_move_for_sort(
+    move_to_score: &Move,
+    position: &Chess,
+    last_best_move: Option<&Move>,
+) -> i64 {
     let mut score = 0;
-    
+
     if let Some(last_move) = last_best_move {
         // If the move is the same as the last best move, give it a higher score
         if move_to_score == last_move {

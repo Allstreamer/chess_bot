@@ -3,6 +3,12 @@ name = "chess_bot"
 version = "0.1.0"
 edition = "2024"
 
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+
 [dependencies]
 shakmaty = "0.28.0"
 rand = "0.8"
