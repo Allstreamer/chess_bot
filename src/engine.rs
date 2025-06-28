@@ -85,10 +85,10 @@ fn pv_search(
     match probe_hash(transposition_table, zobrist_hash, depth, alpha, beta) {
         HashProbeOption::Some(val) => {
             return val;
-        },
-        HashProbeOption::Move(mv) =>  {
+        }
+        HashProbeOption::Move(mv) => {
             best_cached_move = Some(mv);
-        },
+        }
         _ => {}
     }
 
@@ -98,7 +98,7 @@ fn pv_search(
         || position.is_game_over()
         || !is_thinking.load(std::sync::atomic::Ordering::SeqCst)
     {
-        let val = quiesce(position, alpha, beta, is_thinking, nodes);
+        let val = quiesce(position, alpha, beta, nodes);
         record_hash(
             transposition_table,
             zobrist_hash,
@@ -111,8 +111,9 @@ fn pv_search(
     }
 
     let mut legal_moves = position.legal_moves();
-    legal_moves
-        .sort_by_key(|move_to_score| quick_score_move_for_sort(move_to_score, position, best_cached_move.as_ref()));
+    legal_moves.sort_by_key(|move_to_score| {
+        quick_score_move_for_sort(move_to_score, position, best_cached_move.as_ref())
+    });
     let mut best_move = None;
 
     for m in legal_moves {
@@ -158,13 +159,7 @@ fn pv_search(
     alpha
 }
 
-fn quiesce(
-    position: &Chess,
-    mut alpha: i64,
-    beta: i64,
-    is_thinking: &Arc<AtomicBool>,
-    nodes: &mut u64,
-) -> i64 {
+fn quiesce(position: &Chess, mut alpha: i64, beta: i64, nodes: &mut u64) -> i64 {
     *nodes += 1;
 
     let static_eval = evaluate(position);
@@ -195,7 +190,7 @@ fn quiesce(
         let mut new_pos = position.clone();
         new_pos.play_unchecked(m);
 
-        let score = -quiesce(&new_pos, -beta, -alpha, is_thinking, nodes);
+        let score = -quiesce(&new_pos, -beta, -alpha, nodes);
 
         if score >= beta {
             return score;
@@ -375,13 +370,18 @@ fn end_game_king_bonuses(position: &Chess) -> i64 {
     let opponent_king_square = board.king_of(position.turn().other()).unwrap();
 
     // Calculate the distance between the two kings
-    let kings_distance = (player_king_square.file() as i64 - opponent_king_square.file() as i64).abs()
+    let kings_distance = (player_king_square.file() as i64 - opponent_king_square.file() as i64)
+        .abs()
         + (player_king_square.rank() as i64 - opponent_king_square.rank() as i64).abs();
 
     // Calculate a secondary score based on opponent king distance from center
-    let opponent_king_center_distance =
-    i64::max(3 - opponent_king_square.file() as i64, opponent_king_square.file() as i64 - 4)
-        + i64::max(3 - opponent_king_square.rank() as i64, opponent_king_square.rank() as i64 - 4);
+    let opponent_king_center_distance = i64::max(
+        3 - opponent_king_square.file() as i64,
+        opponent_king_square.file() as i64 - 4,
+    ) + i64::max(
+        3 - opponent_king_square.rank() as i64,
+        opponent_king_square.rank() as i64 - 4,
+    );
 
     ((14 - kings_distance) + opponent_king_center_distance) * 10
 }
