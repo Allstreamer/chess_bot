@@ -8,9 +8,7 @@ use shakmaty::{
     zobrist::{Zobrist64, ZobristHash},
 };
 
-use crate::{
-    engine_hyperparams::{self, NEGATIVE_INFINITY, POSITIVE_INFINITY},
-};
+use crate::engine_hyperparams::{self, NEGATIVE_INFINITY, POSITIVE_INFINITY};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TranspositionHashType {
@@ -37,7 +35,8 @@ pub fn next_move(
         quick_score_move_for_sort(move_to_score, position, last_best_move)
     });
 
-    let mut transposition_table: HashMap<Zobrist64, TranspositionInformation> = HashMap::new();
+    let mut transposition_table: HashMap<Zobrist64, TranspositionInformation> =
+        HashMap::with_capacity(65_536);
 
     // Find the move that maximizes the evaluation (piece count)
     let mut nodes = 0;
@@ -65,10 +64,8 @@ pub fn next_move(
         }
     }
 
-    println!(
-        "info depth {} score cp {} nodes {}",
-        depth, best_score, nodes
-    );
+    println!("info depth {depth} score cp {best_score} nodes {nodes}");
+    println!("info string transpositions {}", transposition_table.len());
     best_move.expect("No legal moves found")
 }
 
@@ -280,8 +277,8 @@ fn quick_score_move_for_sort(
 
     // Prioritize moves that capture high value pieces with low value pieces
     if let Some(captured_piece) = move_to_score.capture() {
-        score = (10 * get_piece_base_score(move_to_score.role()))
-            - get_piece_base_score(captured_piece);
+        score += 10
+            * (get_piece_base_score(captured_piece) - get_piece_base_score(move_to_score.role()));
     }
 
     // Filter up Promotions

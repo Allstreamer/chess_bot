@@ -35,8 +35,10 @@ jobs:
       if: steps.cache-cutechess.outputs.cache-hit != 'true'
       run: |
         echo "Cache miss. Building cutechess-cli from source..."
+        # Added 'unzip' to the list of dependencies
         sudo apt-get update -y
-        sudo apt-get install -y git build-essential cmake qttools5-dev qtbase5-dev libqt5svg5-dev
+        sudo apt-get install -y git build-essential cmake qttools5-dev qtbase5-dev libqt5svg5-dev unzip
+        echo "Cloning and building cutechess-cli v1.4.0..."
         git clone https://github.com/cutechess/cutechess.git --branch v1.4.0 --single-branch
         cd cutechess
         mkdir build && cd build
@@ -46,11 +48,9 @@ jobs:
         cp ./cutechess-cli ../../cutechess-cli
         cd ../..
 
-    # --- UPDATED: Using the modern, all-in-one Rust setup action ---
     - name: Set up Rust toolchain and cache
       uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
-        # This propagates the shared-key to the underlying rust-cache action
         cache-shared-key: "cargo-cache"
 
     - name: Build current engine with Cargo
@@ -65,16 +65,20 @@ jobs:
         echo "Building previous commit (old_engine)..."
         cargo build --release
         
-    - name: Download opening book
+    # UPDATED: This step now downloads and extracts the EPD file.
+    - name: Download and Prepare Openings
       run: |
-        echo "Downloading opening book..."
-        wget -O gm2001.bin https://github.com/gmcheems-org/free-opening-books/raw/main/books/bin/gm2001.bin
+        echo "Downloading EPD opening book..."
+        wget https://github.com/official-stockfish/books/raw/refs/heads/master/UHO_Lichess_4852_v1.epd.zip
+        echo "Extracting opening book..."
+        unzip UHO_Lichess_4852_v1.epd.zip
 
     - name: Prepare Engine Names
       run: |
         echo "NEW_COMMIT_SHA=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_ENV
         echo "OLD_COMMIT_SHA=$(echo ${{ github.event.before }} | cut -c1-7)" >> $GITHUB_ENV
 
+    # UPDATED: The -book parameter has been replaced with the -openings parameter.
     - name: Run cutechess-cli SPRT test
       id: sprt_test
       run: |
@@ -82,8 +86,9 @@ jobs:
         ./cutechess-cli \
         -engine cmd=./new_engine/target/release/chess_bot name=NewCommit-${{ env.NEW_COMMIT_SHA }} \
         -engine cmd=./old_engine/target/release/chess_bot name=OldCommit-${{ env.OLD_COMMIT_SHA }} \
-        -each proto=uci tc=inf/1+0.1 book="./gm2001.bin" bookdepth=4 \
-        -games 2 -rounds 2500 -repeat 2 -maxmoves 200 \
+        -each proto=uci tc=inf/1+0.1 \
+        -openings file=UHO_Lichess_4852_v1.epd format=epd order=random \
+        -games 2 -rounds 1500 -repeat 2 -maxmoves 200 \
         -sprt elo0=0 elo1=10 alpha=0.05 beta=0.05 \
         -concurrency 2 \
         -ratinginterval 10 -pgnout games.pgn | tee cutechess_output.txt

@@ -220,7 +220,7 @@ impl EngineState {
                 "bestmove {}",
                 best_move.to_uci(shakmaty::CastlingMode::Standard)
             );
-            println!("{}", best_move);
+            println!("{best_move}");
             println!("info time {}", time_taken.as_millis());
         });
 
