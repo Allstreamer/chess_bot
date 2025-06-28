@@ -19,6 +19,7 @@ struct EngineState {
     pos: Chess,
     is_thinking: Arc<AtomicBool>,
     thinking_thread: Option<thread::JoinHandle<()>>,
+    nickname: String,
 }
 
 impl EngineState {
@@ -28,6 +29,7 @@ impl EngineState {
             pos: Chess::default(),
             is_thinking: Arc::new(AtomicBool::new(false)),
             thinking_thread: None,
+            nickname: "AllRustBot".to_string(),
         }
     }
 
@@ -36,13 +38,14 @@ impl EngineState {
         let tokens: Vec<&str> = line.split_whitespace().collect();
         if let Some(&command) = tokens.first() {
             match command {
-                "uci" => self.handle_uci(),
-                "isready" => self.handle_isready(),
                 "position" => self.handle_position(&tokens[1..]),
                 "go" => self.handle_go(&tokens[1..]),
+                "isready" => self.handle_isready(),
+                "uci" => self.handle_uci(),
                 "quit" => self.handle_quit(),
                 "stop" => self.handle_stop(),
                 "ucinewgame" => self.handle_ucinewgame(),
+                "setoption" => self.handle_setoption(&tokens[1..]),
                 // Other commands can be implemented as needed.
                 // The spec says to ignore unknown commands.
                 _ => {}
@@ -50,12 +53,36 @@ impl EngineState {
         }
     }
 
+    /// Handles the "setoption" command to change engine parameters.
+    fn handle_setoption(&mut self, tokens: &[&str]) {
+        // tokens slice starts after "setoption", e.g., ["name", "nick", "value", "new_name"]
+        if tokens.first() != Some(&"name") {
+            return; // Invalid format
+        }
+
+        let value_pos = tokens.iter().position(|&s| s == "value");
+
+        if let Some(value_idx) = value_pos {
+            // Option with a value
+            if value_idx > 1 {
+                // Ensure there is a name between "name" and "value"
+                let option_name = tokens[1..value_idx].join(" ");
+                let option_value = tokens[value_idx + 1..].join(" ");
+
+                if option_name.eq_ignore_ascii_case("nick") {
+                    self.nickname = option_value;
+                }
+                // Handle other options with values here
+            }
+        }
+        // No "else" branch needed for button types yet, as we only have "nick".
+    }
+
     /// Responds to the "uci" command by identifying the engine and sending supported options.
     fn handle_uci(&self) {
-        println!("id name AllRustBot_no_log");
+        println!("id name {}", self.nickname);
         println!("id author All");
-        // Example of sending an option. A real engine would list all its options here.
-        // println!("option name Hash type spin default 16 min 1 max 1024");
+        println!("option name nick type string default {}", self.nickname);
         println!("uciok");
     }
 
