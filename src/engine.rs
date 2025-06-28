@@ -50,7 +50,7 @@ pub fn next_move(
             }
             let mut new_position = position.clone();
             new_position.play_unchecked(**legal_move);
-            -negamax(
+            -pv_search(
                 &new_position,
                 depth - 1,
                 &mut nodes,
@@ -69,7 +69,7 @@ pub fn next_move(
     *best_move
 }
 
-fn negamax(
+fn pv_search(
     position: &Chess,
     depth: u64,
     nodes: &mut u64,
@@ -90,7 +90,7 @@ fn negamax(
         || position.is_game_over()
         || !is_thinking.load(std::sync::atomic::Ordering::SeqCst)
     {
-        let val = evaluate(position);
+        let val = quiesce(position, alpha, beta, is_thinking, nodes);
         record_hash(
             transposition_table,
             zobrist_hash,
@@ -109,7 +109,7 @@ fn negamax(
         let mut new_pos = position.clone();
         new_pos.play_unchecked(m);
 
-        let score = -negamax(
+        let score = -pv_search(
             &new_pos,
             depth - 1,
             nodes,
@@ -143,6 +143,59 @@ fn negamax(
         transposition_type,
     );
     alpha
+}
+
+fn quiesce(
+    position: &Chess,
+    mut alpha: i64,
+    beta: i64,
+    is_thinking: &Arc<AtomicBool>,
+    nodes: &mut u64,
+) -> i64 {
+    *nodes += 1;
+
+    let static_eval = evaluate(position);
+
+    // Stand Pat
+    let mut best_value = static_eval;
+    if best_value >= beta {
+        return best_value;
+    }
+    if best_value > alpha {
+        alpha = best_value;
+    }
+
+    // Only consider capture moves for quiescence
+    let mut capture_moves: Vec<Move> = position
+        .legal_moves()
+        .into_iter()
+        .filter(|m| m.capture().is_some())
+        .collect();
+
+    // Optionally, sort captures by MVV-LVA or similar
+    capture_moves.sort_by_key(|m| {
+        // Most Valuable Victim - Least Valuable Attacker
+        -get_piece_base_score(m.capture().unwrap()) + get_piece_base_score(m.role())
+    });
+
+    for m in capture_moves {
+        let mut new_pos = position.clone();
+        new_pos.play_unchecked(m);
+
+        let score = -quiesce(&new_pos, -beta, -alpha, is_thinking, nodes);
+
+        if score >= beta {
+            return score;
+        }
+        if score > best_value {
+            best_value = score;
+        }
+        if score > alpha {
+            alpha = score;
+        }
+    }
+
+    best_value
 }
 
 fn probe_hash(

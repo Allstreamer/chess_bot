@@ -53,7 +53,7 @@ impl EngineState {
 
     /// Responds to the "uci" command by identifying the engine and sending supported options.
     fn handle_uci(&self) {
-        println!("id name AllRustBot");
+        println!("id name AllRustBot_Q_search");
         println!("id author All");
         // Example of sending an option. A real engine would list all its options here.
         // println!("option name Hash type spin default 16 min 1 max 1024");
