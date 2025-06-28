@@ -10,7 +10,6 @@ use shakmaty::{
 
 use crate::{
     engine_hyperparams::{self, NEGATIVE_INFINITY, POSITIVE_INFINITY},
-    log_to_file,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,31 +41,35 @@ pub fn next_move(
 
     // Find the move that maximizes the evaluation (piece count)
     let mut nodes = 0;
-    let best_move = legal_moves
-        .iter()
-        .max_by_key(|legal_move| {
-            if !is_thinking.load(std::sync::atomic::Ordering::SeqCst) {
-                return NEGATIVE_INFINITY;
-            }
-            let mut new_position = position.clone();
-            new_position.play_unchecked(**legal_move);
-            -pv_search(
-                &new_position,
-                depth - 1,
-                &mut nodes,
-                NEGATIVE_INFINITY,
-                POSITIVE_INFINITY,
-                is_thinking,
-                &mut transposition_table,
-            )
-        })
-        .expect("No legal moves found");
-    log_to_file(&format!(
-        "Target Depth: {} | Searched: {} Nodes",
-        depth, nodes
-    ))
-    .unwrap();
-    *best_move
+    let mut best_score = NEGATIVE_INFINITY;
+    let mut best_move = None;
+
+    for legal_move in &legal_moves {
+        if !is_thinking.load(std::sync::atomic::Ordering::SeqCst) {
+            break;
+        }
+        let mut new_position = position.clone();
+        new_position.play_unchecked(*legal_move);
+        let score = -pv_search(
+            &new_position,
+            depth - 1,
+            &mut nodes,
+            NEGATIVE_INFINITY,
+            POSITIVE_INFINITY,
+            is_thinking,
+            &mut transposition_table,
+        );
+        if score > best_score {
+            best_score = score;
+            best_move = Some(*legal_move);
+        }
+    }
+
+    println!(
+        "info depth {} score cp {} nodes {}",
+        depth, best_score, nodes
+    );
+    best_move.expect("No legal moves found")
 }
 
 fn pv_search(

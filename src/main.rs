@@ -1,6 +1,5 @@
 use shakmaty::uci::UciMove;
 use shakmaty::{Chess, Color, Position};
-use std::fs::OpenOptions;
 use std::io::{self, BufRead, Write};
 use std::sync::{
     Arc,
@@ -53,7 +52,7 @@ impl EngineState {
 
     /// Responds to the "uci" command by identifying the engine and sending supported options.
     fn handle_uci(&self) {
-        println!("id name AllRustBot");
+        println!("id name AllRustBot_no_log");
         println!("id author All");
         // Example of sending an option. A real engine would list all its options here.
         // println!("option name Hash type spin default 16 min 1 max 1024");
@@ -195,8 +194,7 @@ impl EngineState {
                 best_move.to_uci(shakmaty::CastlingMode::Standard)
             );
             println!("{}", best_move);
-            let _ = log_to_file(&best_move);
-            let _ = log_to_file(&format!("Eval took {:#?}", time_taken));
+            println!("info time {}", time_taken.as_millis());
         });
 
         let _timer_handle = thread::spawn(move || {
@@ -239,22 +237,6 @@ fn flush_stdout() {
     io::stdout().flush().expect("Failed to flush stdout");
 }
 
-pub fn log_to_file(message: &str) -> io::Result<()> {
-    // Open the file with options to create it if it doesn't exist,
-    // to append to it, and to write to it.
-    let mut file = OpenOptions::new()
-        .create(true) // Create the file if it doesn't exist.
-        .append(true) // Append to the end of the file.
-        .open("log.txt")?; // The file to open. The '?' operator will propagate any errors.
-
-    // The writeln! macro writes the formatted string to the file,
-    // automatically appending a newline.
-    writeln!(file, "{}", message)?;
-
-    // If both operations succeed, return Ok.
-    Ok(())
-}
-
 fn main() {
     let mut engine_state = EngineState::new();
     let stdin = io::stdin();
@@ -269,7 +251,6 @@ fn main() {
         }
 
         // Optional: log commands to a file for debugging
-        log_to_file(&format!("GUI -> Engine: {}", line)).unwrap();
 
         engine_state.handle_command(&line);
 
