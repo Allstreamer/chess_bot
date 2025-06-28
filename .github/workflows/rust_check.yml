@@ -1,48 +1,49 @@
-name: Rust CI
+name: "Test Suite"
 
 # Controls when the workflow will run
 on:
   push:
-    branches: [ "master" ]
-  # Triggers the workflow on pull request events to any branch
   pull_request:
-    branches: [ "**" ]
 
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+# A workflow run is made up of one or more jobs that can run in parallel
 jobs:
-  # This job is named "build-and-test"
-  build-and-test:
-    # The type of runner that the job will run on
+  # Job to run tests
+  test:
+    name: cargo test
     runs-on: ubuntu-latest
-
-    # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
-      # Step 1: Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - name: Checkout code
         uses: actions/checkout@v4
-
-      # Step 2: Install the Rust toolchain
-      # This uses the official action for setting up a Rust environment.
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+      - name: Run tests
+        run: cargo test --all-features
+
+  # Job to check formatting
+  formatting:
+    name: cargo fmt
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Install Rust toolchain with rustfmt
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          # You can specify components like 'clippy' and 'rustfmt'
-          components: clippy, rustfmt
+          components: rustfmt
+      - name: Check formatting
+        uses: actions-rust-lang/rustfmt@v1
 
-      # Step 3: Check code formatting
-      # The '--check' flag makes 'cargo fmt' exit with an error if the code is not formatted,
-      # instead of formatting it in place.
-      - name: Check formatting with cargo fmt
-        run: cargo fmt -- --check
-
-      # Step 4: Lint code with cargo clippy
-      # The '-D warnings' flag tells clippy to treat all warnings as errors,
-      # which will fail the workflow if there are any lints.
-      - name: Lint with cargo clippy
+  # Job to lint the code with clippy
+  clippy:
+    name: cargo clippy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Install Rust toolchain with clippy
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: clippy
+      - name: Lint with clippy
+        # Treat all warnings as errors
         run: cargo clippy -- -D warnings
-
-      # Step 5: Run tests
-      # 'cargo test' compiles and runs all unit and integration tests.
-      # The '--verbose' flag provides more detailed output.
-      - name: Run tests with cargo test
-        run: cargo test --verbose

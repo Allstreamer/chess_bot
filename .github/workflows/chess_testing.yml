@@ -35,25 +35,23 @@ jobs:
       if: steps.cache-cutechess.outputs.cache-hit != 'true'
       run: |
         echo "Cache miss. Building cutechess-cli from source..."
-        echo "Installing Cute Chess dependencies..."
         sudo apt-get update -y
         sudo apt-get install -y git build-essential cmake qttools5-dev qtbase5-dev libqt5svg5-dev
-        echo "Cloning and building cutechess-cli v1.4.0..."
         git clone https://github.com/cutechess/cutechess.git --branch v1.4.0 --single-branch
         cd cutechess
         mkdir build && cd build
         cmake ..
-        # 1. OPTIMIZED: Build only the CLI target to save time.
         make cli
         echo "Build complete. Copying executable..."
-        # 2. FIXED: Corrected the path to the compiled executable.
         cp ./cutechess-cli ../../cutechess-cli
         cd ../..
 
+    # --- UPDATED: Using the modern, all-in-one Rust setup action ---
     - name: Set up Rust toolchain and cache
-      uses: Swatinem/rust-cache@v2
+      uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
-        shared-key: "cargo-cache"
+        # This propagates the shared-key to the underlying rust-cache action
+        cache-shared-key: "cargo-cache"
 
     - name: Build current engine with Cargo
       run: |
