@@ -119,9 +119,11 @@ fn pv_search(
         let mut new_pos = position.clone();
         new_pos.play_unchecked(m);
 
+        let ext = if new_pos.is_check() { 1 } else { 0 };
+
         let score = -pv_search(
             &new_pos,
-            depth - 1,
+            depth - 1 + ext,
             nodes,
             -beta,
             -alpha,
