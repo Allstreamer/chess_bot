@@ -40,35 +40,36 @@ pub fn next_move(
 
     // Find the move that maximizes the evaluation (piece count)
     let mut nodes = 0;
-    let mut best_score = NEGATIVE_INFINITY;
     let mut best_move = None;
+    let mut alpha = NEGATIVE_INFINITY;
+    let beta = POSITIVE_INFINITY;
 
     for legal_move in &legal_moves {
-        if !is_thinking.load(std::sync::atomic::Ordering::SeqCst) {
-            break;
-        }
         let mut new_position = position.clone();
         new_position.play_unchecked(*legal_move);
-        let score = -pv_search(
+        let score = -negamax(
             &new_position,
             depth - 1,
             &mut nodes,
-            NEGATIVE_INFINITY,
-            POSITIVE_INFINITY,
+            -beta,
+            -alpha,
             is_thinking,
             &mut transposition_table,
         );
-        if score > best_score {
-            best_score = score;
+        if score > alpha {
+            alpha = score;
             best_move = Some(*legal_move);
+        }
+        if !is_thinking.load(std::sync::atomic::Ordering::SeqCst) {
+            break;
         }
     }
 
-    println!("info depth {depth} score cp {best_score} nodes {nodes}");
+    println!("info depth {depth} score cp {alpha} nodes {nodes}");
     best_move.expect("No legal moves found")
 }
 
-fn pv_search(
+fn negamax(
     position: &Chess,
     depth: u64,
     nodes: &mut u64,
@@ -119,7 +120,7 @@ fn pv_search(
         let mut new_pos = position.clone();
         new_pos.play_unchecked(m);
 
-        let score = -pv_search(
+        let score = -negamax(
             &new_pos,
             depth - 1,
             nodes,
