@@ -18,7 +18,7 @@ enum TranspositionHashType {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct TranspositionInformation {
+pub struct TranspositionInformation {
     depth: u64,
     value: i64,
     best_move: Option<Move>,
@@ -31,14 +31,12 @@ pub fn next_move(
     depth: u64,
     is_thinking: &Arc<AtomicBool>,
     last_best_move: Option<&Move>,
+    transposition_table: &mut HashMap<Zobrist64, TranspositionInformation>,
 ) -> Move {
     let mut legal_moves = position.legal_moves();
     legal_moves.sort_by_key(|move_to_score| {
         quick_score_move_for_sort(move_to_score, position, last_best_move)
     });
-
-    let mut transposition_table: HashMap<Zobrist64, TranspositionInformation> =
-        HashMap::with_capacity(65_536);
 
     // Find the move that maximizes the evaluation (piece count)
     let mut nodes = 0;
@@ -56,7 +54,7 @@ pub fn next_move(
             -beta,
             -alpha,
             is_thinking,
-            &mut transposition_table,
+            transposition_table,
         );
         if score > alpha {
             alpha = score;

@@ -1,5 +1,7 @@
 use shakmaty::uci::UciMove;
+use shakmaty::zobrist::Zobrist64;
 use shakmaty::{Chess, Color, Position};
+use std::collections::HashMap;
 use std::io::{self, BufRead, Write};
 use std::sync::{
     Arc,
@@ -10,6 +12,8 @@ use std::time::{Duration, Instant};
 
 mod engine;
 use engine::next_move;
+
+use crate::engine::TranspositionInformation;
 
 #[rustfmt::skip]
 mod engine_hyperparams;
@@ -196,7 +200,15 @@ impl EngineState {
         });
 
         let handle = thread::spawn(move || {
-            let mut best_move = next_move(&position_to_search, 1, &is_thinking_clone_b, None);
+            let mut transposition_table: HashMap<Zobrist64, TranspositionInformation> =
+                HashMap::with_capacity(65_536);
+            let mut best_move = next_move(
+                &position_to_search,
+                1,
+                &is_thinking_clone_b,
+                None,
+                &mut transposition_table,
+            );
             let mut depth: u64 = 2;
             loop {
                 if !is_thinking_clone_b.load(Ordering::SeqCst) {
@@ -207,6 +219,7 @@ impl EngineState {
                     depth,
                     &is_thinking_clone_b,
                     Some(&best_move),
+                    &mut transposition_table,
                 );
                 depth += 1;
             }
