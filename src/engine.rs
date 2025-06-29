@@ -45,9 +45,6 @@ pub fn next_move(
     let beta = POSITIVE_INFINITY;
 
     for legal_move in &legal_moves {
-        if !is_thinking.load(std::sync::atomic::Ordering::SeqCst) {
-            break;
-        }
         let mut new_position = position.clone();
         new_position.play_unchecked(*legal_move);
         let score = -negamax(
@@ -62,6 +59,9 @@ pub fn next_move(
         if score > alpha {
             alpha = score;
             best_move = Some(*legal_move);
+        }
+        if !is_thinking.load(std::sync::atomic::Ordering::SeqCst) {
+            break;
         }
     }
 

@@ -214,6 +214,8 @@ impl EngineState {
             }
 
             let time_taken = Instant::now() - thinking_start_time;
+            println!("info time {}", time_taken.as_millis());
+
             // Report the result back to the GUI.
             // A real engine might also send a ponder move.
             let best_move = format!(
@@ -221,7 +223,6 @@ impl EngineState {
                 best_move.to_uci(shakmaty::CastlingMode::Standard)
             );
             println!("{best_move}");
-            println!("info time {}", time_taken.as_millis());
         });
 
         let _timer_handle = thread::spawn(move || {
@@ -250,6 +251,7 @@ impl EngineState {
         // as the acknowledgement that the search has stopped.
         // In a more complex engine, you would set a flag here:
         // self.stop_search.store(true, Ordering::SeqCst);
+        self.is_thinking.store(false, Ordering::SeqCst);
     }
 
     /// Handles the "quit" command.
