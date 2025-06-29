@@ -119,11 +119,9 @@ fn pv_search(
         let mut new_pos = position.clone();
         new_pos.play_unchecked(m);
 
-        let ext = if new_pos.is_check() { 1 } else { 0 };
-
         let score = -pv_search(
             &new_pos,
-            depth - 1 + ext,
+            depth - 1,
             nodes,
             -beta,
             -alpha,
@@ -204,7 +202,7 @@ fn quiesce(position: &Chess, mut alpha: i64, beta: i64, nodes: &mut u64) -> i64 
         }
     }
 
-    best_value
+    alpha
 }
 
 enum HashProbeOption {
