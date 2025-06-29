@@ -1,9 +1,11 @@
- name: Branch vs. Master Engine CI
+name: Branch vs. Master Engine CI
 
 on:
+  # UPDATED: This now triggers the workflow on a push to ANY branch.
   push:
-    branches-ignore:
-      - 'master'
+    branches:
+      - '**'
+  # Allows you to run this workflow manually from the Actions tab.
   workflow_dispatch:
 
 permissions:
@@ -13,9 +15,9 @@ jobs:
   test_engine_improvement:
     runs-on: ubuntu-latest
 
-    # ADDED: This condition prevents the job from running if it's on the master branch,
-    # which is useful for manual `workflow_dispatch` triggers.
-    if: github.ref != 'refs/heads/master'
+    # UPDATED: This condition now controls the logic. The job will NOT run
+    # on the master branch, solving the error.
+    if: github.ref_name != 'master'
 
     steps:
     - name: Checkout Feature Branch (New Engine)
@@ -76,7 +78,6 @@ jobs:
         echo "Extracting opening book..."
         unzip UHO_Lichess_4852_v1.epd.zip
 
-    # UPDATED: Added sanitization for branch names with slashes
     - name: Prepare Engine Names
       run: |
         echo "BRANCH_NAME=$(echo ${{ github.ref_name }} | tr '/' '-')" >> $GITHUB_ENV
