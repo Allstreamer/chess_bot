@@ -65,7 +65,6 @@ pub fn next_move(
     }
 
     println!("info depth {depth} score cp {best_score} nodes {nodes}");
-    println!("info string transpositions {}", transposition_table.len());
     best_move.expect("No legal moves found")
 }
 
@@ -271,14 +270,13 @@ fn quick_score_move_for_sort(
     if let Some(last_move) = last_best_move {
         // If the move is the same as the last best move, give it a higher score
         if move_to_score == last_move {
-            score += 1000; // Arbitrary high value to prioritize this move
+            score += 10000; // Arbitrary high value to prioritize this move
         }
     }
 
     // Prioritize moves that capture high value pieces with low value pieces
     if let Some(captured_piece) = move_to_score.capture() {
-        score += 10
-            * (get_piece_base_score(captured_piece) - get_piece_base_score(move_to_score.role()));
+        score += 10 * get_piece_base_score(captured_piece);
     }
 
     // Filter up Promotions
@@ -286,7 +284,6 @@ fn quick_score_move_for_sort(
         score += get_piece_base_score(new_piece);
     }
 
-    //
     if position
         .board()
         .attacks_to(
