@@ -1,11 +1,9 @@
 name: Branch vs. Master Engine CI
 
 on:
-  # UPDATED: This now triggers the workflow on a push to ANY branch.
   push:
     branches:
       - '**'
-  # Allows you to run this workflow manually from the Actions tab.
   workflow_dispatch:
 
 permissions:
@@ -14,9 +12,6 @@ permissions:
 jobs:
   test_engine_improvement:
     runs-on: ubuntu-latest
-
-    # UPDATED: This condition now controls the logic. The job will NOT run
-    # on the master branch, solving the error.
     if: github.ref_name != 'master'
 
     steps:
@@ -30,29 +25,34 @@ jobs:
       with:
         ref: 'master'
         path: 'old_engine'
+        
+    # NEW: Unconditional step to install dependencies for both build and runtime.
+    - name: Install System Dependencies
+      run: |
+        echo "Installing system dependencies..."
+        sudo apt-get update -y
+        sudo apt-get install -y git build-essential cmake qttools5-dev qtbase5-dev libqt5svg5-dev unzip
 
     - name: Cache cutechess-cli build
       id: cache-cutechess
       uses: actions/cache@v4
       with:
         path: ./cutechess-cli
-        key: cutechess-v1.4.0-${{ runner.os }}
+        # I've updated the key version to v3 to ensure a fresh build with the new logic.
+        key: cutechess-v1.4.0-${{ runner.os }}-v3
 
-    - name: Install and Build cutechess-cli v1.4.0
+    # UPDATED: This step now ONLY builds the application; dependencies are handled above.
+    - name: Build cutechess-cli v1.4.0 from source
       if: steps.cache-cutechess.outputs.cache-hit != 'true'
       run: |
-        echo "Cache miss. Building cutechess-cli from source..."
-        sudo apt-get update -y
-        sudo apt-get install -y git build-essential cmake qttools5-dev qtbase5-dev libqt5svg5-dev unzip
-        echo "Cloning and building cutechess-cli v1.4.0..."
+        echo "Cache miss. Building cutechess-cli..."
         git clone https://github.com/cutechess/cutechess.git --branch v1.4.0 --single-branch
         cd cutechess
         mkdir build && cd build
         cmake ..
         make cli
         echo "Build complete. Copying executable..."
-        cp ./cutechess-cli ../../cutechess-cli
-        cd ../..
+        cp ./cutechess-cli ${{ github.workspace }}/cutechess-cli
 
     - name: Set up Rust toolchain and cache
       uses: actions-rust-lang/setup-rust-toolchain@v1
