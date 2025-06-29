@@ -16,6 +16,8 @@ enum TranspositionHashType {
     Alpha,
     Beta,
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct TranspositionInformation {
     depth: u64,
     value: i64,
@@ -23,7 +25,7 @@ struct TranspositionInformation {
     transposition_type: TranspositionHashType,
 }
 
-/// Returns the best move for the current position using piece count evaluation.
+/// Entry point for the chess engine to search for the best move.
 pub fn next_move(
     position: &Chess,
     depth: u64,
@@ -206,13 +208,15 @@ fn quiesce(position: &Chess, mut alpha: i64, beta: i64, nodes: &mut u64) -> i64 
     best_value
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HashProbeOption {
     Some(i64),
     Move(Move),
     None,
 }
+
 fn probe_hash(
-    transposition_table: &mut HashMap<Zobrist64, TranspositionInformation>,
+    transposition_table: &HashMap<Zobrist64, TranspositionInformation>,
     zobrist_hash: Zobrist64,
     depth: u64,
     alpha: i64,
@@ -301,12 +305,10 @@ fn quick_score_move_for_sort(
     -score
 }
 
-/// Calculates a chess position's material score from the players's perspective.
+/// Calculates a chess position's score from the players's perspective.
 /// A positive score means the player is ahead; a negative score means the opponent is ahead.
 fn evaluate(position: &Chess) -> i64 {
-    // Initialize a mutable variable `total_score` to 0. This will be our accumulator.
     let mut total_score = 0;
-    // Get the color of the player whose turn it is to move (e.g., White or Black).
     let current_player_color = position.turn();
 
     if position.is_game_over() {
@@ -402,7 +404,7 @@ fn end_game_king_bonuses(position: &Chess) -> i64 {
 //     get_material_advantage(position).abs() as f64 / TOTAL_POSSIBLE_MATERIAL as f64
 // }
 
-/// Returns the score of a piece based on its role. The score is used for evaluation.
+/// Returns the score of a piece based on its role.
 fn get_piece_base_score(role: Role) -> i64 {
     match role {
         Role::Pawn => engine_hyperparams::PAWN_VALUE,

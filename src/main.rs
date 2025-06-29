@@ -23,17 +23,16 @@ struct EngineState {
 }
 
 impl EngineState {
-    /// Creates a new EngineState with the default starting chess position.
     fn new() -> Self {
-        EngineState {
+        Self {
             pos: Chess::default(),
             is_thinking: Arc::new(AtomicBool::new(false)),
             thinking_thread: None,
-            nickname: "AllRustBot".to_string(),
+            nickname: "AllRustBot".to_owned(),
         }
     }
 
-    /// The main command handler. Parses a line from the GUI and acts on it.
+    /// Parses a line from the GUI and acts on it.
     fn handle_command(&mut self, line: &str) {
         let tokens: Vec<&str> = line.split_whitespace().collect();
         if let Some(&command) = tokens.first() {
@@ -46,7 +45,6 @@ impl EngineState {
                 "stop" => self.handle_stop(),
                 "ucinewgame" => self.handle_ucinewgame(),
                 "setoption" => self.handle_setoption(&tokens[1..]),
-                // Other commands can be implemented as needed.
                 // The spec says to ignore unknown commands.
                 _ => {}
             }
@@ -183,8 +181,8 @@ impl EngineState {
 
         // Clone necessary state for the thinking thread
         let position_to_search = self.pos.clone();
-        let is_thinking_clone = self.is_thinking.clone();
-        let is_thinking_clone_b = self.is_thinking.clone();
+        let is_thinking_clone = Arc::clone(&self.is_thinking);
+        let is_thinking_clone_b = Arc::clone(&self.is_thinking);
 
         let time = if position_to_search.turn() == Color::White {
             wtime
@@ -193,7 +191,7 @@ impl EngineState {
         };
 
         let target_think_time = Duration::from_millis(match time {
-            Some(v) => (v as f64 * 0.05) as u64,
+            Some(available_time) => available_time / 20,
             None => 100,
         });
 
@@ -213,21 +211,19 @@ impl EngineState {
                 depth += 1;
             }
 
-            let time_taken = Instant::now() - thinking_start_time;
+            let time_taken = thinking_start_time.elapsed();
             println!("info time {}", time_taken.as_millis());
 
-            // Report the result back to the GUI.
             // A real engine might also send a ponder move.
-            let best_move = format!(
+            let best_move_response = format!(
                 "bestmove {}",
                 best_move.to_uci(shakmaty::CastlingMode::Standard)
             );
-            println!("{best_move}");
+            println!("{best_move_response}");
         });
 
         let _timer_handle = thread::spawn(move || {
             thread::sleep(target_think_time);
-            // Signal that thinking is finished.
             is_thinking_clone.store(false, Ordering::SeqCst);
         });
 
@@ -236,34 +232,18 @@ impl EngineState {
 
     /// Prepares the engine for a new game.
     fn handle_ucinewgame(&mut self) {
-        // For a simple engine, we can just reset the position to the start.
-        // A more complex engine might clear hash tables or other game-specific data.
         self.pos = Chess::default();
     }
 
     /// Handles the "stop" command.
-    fn handle_stop(&mut self) {
-        // NOTE: The provided `next_move` function is a black box and blocking.
-        // Therefore, we can't truly interrupt it. A real engine would have an
-        // iterative search that checks an atomic 'stop_requested' flag in its main loop.
-        // When our thinking thread finishes, it will print 'bestmove' on its own.
-        // This handler is here to conform to the protocol; the GUI will see 'bestmove'
-        // as the acknowledgement that the search has stopped.
-        // In a more complex engine, you would set a flag here:
-        // self.stop_search.store(true, Ordering::SeqCst);
+    fn handle_stop(&self) {
         self.is_thinking.store(false, Ordering::SeqCst);
     }
 
     /// Handles the "quit" command.
     fn handle_quit(&self) {
-        // We could send a final message or clean up, but exiting is sufficient.
         std::process::exit(0);
     }
-}
-
-/// A utility function to ensure messages are sent immediately to the GUI.
-fn flush_stdout() {
-    io::stdout().flush().expect("Failed to flush stdout");
 }
 
 fn main() {
@@ -271,19 +251,17 @@ fn main() {
     let stdin = io::stdin();
 
     for line in stdin.lock().lines() {
-        let line = line
+        let trimed_line = line
             .expect("Failed to read line from stdin")
             .trim()
-            .to_string();
-        if line.is_empty() {
+            .to_owned();
+        if trimed_line.is_empty() {
             continue;
         }
 
-        // Optional: log commands to a file for debugging
-
-        engine_state.handle_command(&line);
+        engine_state.handle_command(&trimed_line);
 
         // Ensure every command response is sent immediately.
-        flush_stdout();
+        io::stdout().flush().expect("Failed to flush stdout");
     }
 }
