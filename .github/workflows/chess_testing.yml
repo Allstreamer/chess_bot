@@ -1,8 +1,9 @@
-name: Rust Chess Engine CI
+ name: Branch vs. Master Engine CI
 
 on:
   push:
-    branches: [ "master" ]
+    branches-ignore:
+      - 'master'
   workflow_dispatch:
 
 permissions:
@@ -12,16 +13,20 @@ jobs:
   test_engine_improvement:
     runs-on: ubuntu-latest
 
+    # ADDED: This condition prevents the job from running if it's on the master branch,
+    # which is useful for manual `workflow_dispatch` triggers.
+    if: github.ref != 'refs/heads/master'
+
     steps:
-    - name: Checkout current commit (new engine)
+    - name: Checkout Feature Branch (New Engine)
       uses: actions/checkout@v4
       with:
         path: 'new_engine'
 
-    - name: Checkout previous commit (old engine)
+    - name: Checkout Master Branch (Old Engine)
       uses: actions/checkout@v4
       with:
-        ref: ${{ github.event.before }}
+        ref: 'master'
         path: 'old_engine'
 
     - name: Cache cutechess-cli build
@@ -35,7 +40,6 @@ jobs:
       if: steps.cache-cutechess.outputs.cache-hit != 'true'
       run: |
         echo "Cache miss. Building cutechess-cli from source..."
-        # Added 'unzip' to the list of dependencies
         sudo apt-get update -y
         sudo apt-get install -y git build-essential cmake qttools5-dev qtbase5-dev libqt5svg5-dev unzip
         echo "Cloning and building cutechess-cli v1.4.0..."
@@ -53,19 +57,18 @@ jobs:
       with:
         cache-shared-key: "cargo-cache"
 
-    - name: Build current engine with Cargo
+    - name: Build current engine (from feature branch)
       run: |
         cd new_engine
-        echo "Building current commit (new_engine)..."
+        echo "Building current commit from ${{ github.ref_name }}..."
         cargo build --release
 
-    - name: Build previous engine with Cargo
+    - name: Build old engine (from master branch)
       run: |
         cd old_engine
-        echo "Building previous commit (old_engine)..."
+        echo "Building baseline commit from master..."
         cargo build --release
         
-    # UPDATED: This step now downloads and extracts the EPD file.
     - name: Download and Prepare Openings
       run: |
         echo "Downloading EPD opening book..."
@@ -73,22 +76,23 @@ jobs:
         echo "Extracting opening book..."
         unzip UHO_Lichess_4852_v1.epd.zip
 
+    # UPDATED: Added sanitization for branch names with slashes
     - name: Prepare Engine Names
       run: |
+        echo "BRANCH_NAME=$(echo ${{ github.ref_name }} | tr '/' '-')" >> $GITHUB_ENV
         echo "NEW_COMMIT_SHA=$(echo ${{ github.sha }} | cut -c1-7)" >> $GITHUB_ENV
-        echo "OLD_COMMIT_SHA=$(echo ${{ github.event.before }} | cut -c1-7)" >> $GITHUB_ENV
+        echo "OLD_COMMIT_SHA=$(cd old_engine && git rev-parse --short HEAD)" >> $GITHUB_ENV
 
-    # UPDATED: The -book parameter has been replaced with the -openings parameter.
     - name: Run cutechess-cli SPRT test
       id: sprt_test
       run: |
-        echo "Starting SPRT test: NewCommit-${{ env.NEW_COMMIT_SHA }} vs OldCommit-${{ env.OLD_COMMIT_SHA }}"
+        echo "Starting SPRT test: ${{ env.BRANCH_NAME }}-${{ env.NEW_COMMIT_SHA }} vs master-${{ env.OLD_COMMIT_SHA }}"
         ./cutechess-cli \
-        -engine cmd=./new_engine/target/release/chess_bot name=NewCommit-${{ env.NEW_COMMIT_SHA }} \
-        -engine cmd=./old_engine/target/release/chess_bot name=OldCommit-${{ env.OLD_COMMIT_SHA }} \
+        -engine cmd=./new_engine/target/release/chess_bot name=${{ env.BRANCH_NAME }}-${{ env.NEW_COMMIT_SHA }} \
+        -engine cmd=./old_engine/target/release/chess_bot name=master-${{ env.OLD_COMMIT_SHA }} \
         -each proto=uci tc=inf/1+0.1 \
         -openings file=UHO_Lichess_4852_v1.epd format=epd order=random \
-        -games 2 -rounds 1500 -repeat 2 -maxmoves 200 \
+        -games 2 -rounds 2500 -repeat 2 -maxmoves 200 \
         -sprt elo0=0 elo1=10 alpha=0.05 beta=0.05 \
         -concurrency 2 \
         -ratinginterval 10 -pgnout games.pgn | tee cutechess_output.txt
@@ -97,11 +101,11 @@ jobs:
     - name: Check SPRT results
       run: |
         echo "Analyzing SPRT results..."
-        if grep -q "SPRT: H1 accepted" cutechess_output.txt; then
-          echo "Result: PASSED. New commit is statistically stronger."
+        if grep -q "H1 was accepted" cutechess_output.txt; then
+          echo "Result: PASSED. The branch '${{ env.BRANCH_NAME }}' is statistically stronger than master."
           exit 0
-        elif grep -q "SPRT: H0 accepted" cutechess_output.txt; then
-          echo "Result: FAILED. New commit is not statistically stronger."
+        elif grep -q "H0 was accepted" cutechess_output.txt; then
+          echo "Result: FAILED. The branch '${{ env.BRANCH_NAME }}' is not statistically stronger than master."
           exit 1
         else
           echo "Result: INCONCLUSIVE. The SPRT test did not finish within the game limit."
