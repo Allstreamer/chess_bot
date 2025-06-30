@@ -201,9 +201,7 @@ impl EngineState {
 
         let handle = thread::spawn(move || {
             let mut transposition_table: HashMap<Zobrist64, TranspositionInformation> =
-                // Enougth for ~depth 8 without reallocation should be ~88mb
-                // Found via testing
-                HashMap::with_capacity(3_670_016);
+                HashMap::new();
             let mut best_move = next_move(
                 &position_to_search,
                 1,
