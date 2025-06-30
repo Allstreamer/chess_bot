@@ -201,7 +201,7 @@ impl EngineState {
 
         let handle = thread::spawn(move || {
             let mut transposition_table: HashMap<Zobrist64, TranspositionInformation> =
-                HashMap::with_capacity(65_536);
+                HashMap::new();
             let mut best_move = next_move(
                 &position_to_search,
                 1,
