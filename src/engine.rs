@@ -4,11 +4,11 @@ use std::{
 };
 
 use shakmaty::{
-    Chess, Color, Move, Outcome, Position, Role,
+    Chess, Move, Position, Role,
     zobrist::{Zobrist64, ZobristHash},
 };
 
-use crate::engine_hyperparams::{self, NEGATIVE_INFINITY, POSITIVE_INFINITY};
+use crate::eval::{NEGATIVE_INFINITY, POSITIVE_INFINITY, evaluate};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TranspositionHashType {
@@ -209,7 +209,7 @@ impl<'a> Searcher<'a> {
         // Optionally, sort captures by MVV-LVA or similar
         capture_moves.sort_by_key(|m| {
             // Most Valuable Victim - Least Valuable Attacker
-            -get_piece_base_score(m.capture().unwrap()) + get_piece_base_score(m.role())
+            -piece_capture_score(m.capture().unwrap()) + piece_capture_score(m.role())
         });
 
         for m in capture_moves {
@@ -230,6 +230,17 @@ impl<'a> Searcher<'a> {
         }
 
         best_value
+    }
+}
+
+fn piece_capture_score(piece: Role) -> i64 {
+    match piece {
+        Role::Pawn => 100,
+        Role::Knight => 300,
+        Role::Bishop => 300,
+        Role::Rook => 500,
+        Role::Queen => 900,
+        Role::King => 10000,
     }
 }
 
@@ -306,12 +317,12 @@ fn quick_score_move_for_sort(
 
     // Prioritize moves that capture high value pieces with low value pieces
     if let Some(captured_piece) = move_to_score.capture() {
-        score += 10 * get_piece_base_score(captured_piece);
+        score += 10 * piece_capture_score(captured_piece);
     }
 
     // Filter up Promotions
     if let Some(new_piece) = move_to_score.promotion() {
-        score += get_piece_base_score(new_piece);
+        score += piece_capture_score(new_piece);
     }
 
     if position
@@ -323,126 +334,17 @@ fn quick_score_move_for_sort(
         )
         .any()
     {
-        score -= get_piece_base_score(move_to_score.role());
+        score -= piece_capture_score(move_to_score.role());
     }
 
     // Reverse order since rust sorts moves from lowest score to highest score
     -score
 }
 
-/// Calculates a chess position's score from the players's perspective.
-/// A positive score means the player is ahead; a negative score means the opponent is ahead.
-fn evaluate(position: &Chess) -> i64 {
-    let mut total_score = 0;
-    let current_player_color = position.turn();
-
-    if position.is_game_over() {
-        return match position.outcome() {
-            Some(Outcome::Decisive { winner }) => {
-                if winner == current_player_color {
-                    engine_hyperparams::MATE_SCORE
-                } else {
-                    -engine_hyperparams::MATE_SCORE // Being checkmated is the worst outcome
-                }
-            }
-            _ => 0, // Any other outcome (stalemate, etc.) is neutral
-        };
-    }
-
-    let board = position.board();
-
-    let piece_count = board.iter().len();
-    for (square, piece) in board {
-        let mut tmp_score = get_piece_base_score(piece.role);
-
-        let piece_pos = if piece.color == Color::White {
-            square.flip_vertical().to_usize()
-        } else {
-            square.to_usize()
-        };
-        tmp_score += match piece.role {
-            Role::Pawn => engine_hyperparams::PAWN_PST[piece_pos],
-            Role::Knight => engine_hyperparams::KNIGHT_PST[piece_pos],
-            Role::Bishop => engine_hyperparams::BISHOP_PST[piece_pos],
-            Role::Rook => engine_hyperparams::ROOK_PST[piece_pos],
-            Role::Queen => engine_hyperparams::QUEEN_PST[piece_pos],
-            Role::King => {
-                if piece_count > 10 {
-                    engine_hyperparams::KING_MG_PST[piece_pos]
-                } else {
-                    engine_hyperparams::KING_EG_PST[piece_pos]
-                }
-            }
-        };
-
-        total_score += tmp_score
-            * if piece.color == current_player_color {
-                1
-            } else {
-                -1
-            };
-    }
-    if piece_count <= 10 {
-        total_score += end_game_king_bonuses(position);
-    }
-
-    total_score
-}
-
-fn end_game_king_bonuses(position: &Chess) -> i64 {
-    let board = position.board();
-    let player_king_square = board.king_of(position.turn()).unwrap();
-    let opponent_king_square = board.king_of(position.turn().other()).unwrap();
-
-    // Calculate the distance between the two kings
-    let kings_distance = (player_king_square.file() as i64 - opponent_king_square.file() as i64)
-        .abs()
-        + (player_king_square.rank() as i64 - opponent_king_square.rank() as i64).abs();
-
-    // Calculate a secondary score based on opponent king distance from center
-    let opponent_king_center_distance = i64::max(
-        3 - opponent_king_square.file() as i64,
-        opponent_king_square.file() as i64 - 4,
-    ) + i64::max(
-        3 - opponent_king_square.rank() as i64,
-        opponent_king_square.rank() as i64 - 4,
-    );
-
-    ((14 - kings_distance) + opponent_king_center_distance) * 10
-}
-
-// fn get_material_advantage(position: &Chess) -> i64 {
-//     let board = position.board();
-
-//     let player_material = board.material_side(position.turn()).zip_role().iter().map(|(role, count)| {
-//         get_piece_base_score(*role) * *count as i64
-//     }).sum::<i64>();
-
-//     let opponent_material = board.material_side(position.turn().other()).zip_role().iter().map(|(role, count)| {
-//         get_piece_base_score(*role) * *count as i64
-//     }).sum::<i64>();
-
-//     player_material - opponent_material
-// }
-
-// fn end_game_weight(position: &Chess) -> f64 {
-//     get_material_advantage(position).abs() as f64 / TOTAL_POSSIBLE_MATERIAL as f64
-// }
-
-/// Returns the score of a piece based on its role.
-fn get_piece_base_score(role: Role) -> i64 {
-    match role {
-        Role::Pawn => engine_hyperparams::PAWN_VALUE,
-        Role::Knight => engine_hyperparams::KNIGHT_VALUE,
-        Role::Bishop => engine_hyperparams::BISHOP_VALUE,
-        Role::Rook => engine_hyperparams::ROOK_VALUE,
-        Role::Queen => engine_hyperparams::QUEEN_VALUE,
-        Role::King => engine_hyperparams::KING_VALUE,
-    }
-}
-
 #[cfg(test)]
 mod test {
+    use crate::eval::evaluate;
+
     use super::*;
     // use rand::prelude::*;
     use shakmaty::{CastlingMode, fen};
