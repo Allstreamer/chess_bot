@@ -31,6 +31,7 @@ pub struct Searcher<'a> {
     is_thinking: &'a Arc<AtomicBool>,
     last_best_move: Option<&'a Move>,
     transposition_table: &'a mut HashMap<Zobrist64, TranspositionInformation>,
+    searched_nodes: u64,
 }
 
 impl<'a> Searcher<'a> {
@@ -47,6 +48,7 @@ impl<'a> Searcher<'a> {
             is_thinking,
             last_best_move,
             transposition_table,
+            searched_nodes: 0,
         }
     }
 
@@ -58,7 +60,6 @@ impl<'a> Searcher<'a> {
         });
 
         // Find the move that maximizes the evaluation (piece count)
-        let mut nodes = 0;
         let mut best_move = None;
         let mut alpha = NEGATIVE_INFINITY;
         let beta = POSITIVE_INFINITY;
@@ -66,15 +67,7 @@ impl<'a> Searcher<'a> {
         for legal_move in &legal_moves {
             let mut new_position = self.position.clone();
             new_position.play_unchecked(*legal_move);
-            let score = -negamax(
-                &new_position,
-                self.target_depth - 1,
-                &mut nodes,
-                -beta,
-                -alpha,
-                self.is_thinking,
-                self.transposition_table,
-            );
+            let score = -self.negamax(&new_position, self.target_depth - 1, -beta, -alpha);
             if score > alpha {
                 alpha = score;
                 best_move = Some(*legal_move);
@@ -84,12 +77,89 @@ impl<'a> Searcher<'a> {
             }
         }
 
-        println!("info depth {} score cp {alpha} nodes {nodes}", self.target_depth);
+        println!(
+            "info depth {} score cp {alpha} nodes {}",
+            self.target_depth, self.searched_nodes
+        );
         best_move.expect("No legal moves found")
+    }
+
+    fn negamax(&mut self, position: &Chess, depth: u64, mut alpha: i64, beta: i64) -> i64 {
+        let mut transposition_type = TranspositionHashType::Alpha;
+        let zobrist_hash = position.zobrist_hash::<Zobrist64>(shakmaty::EnPassantMode::Legal);
+        let mut best_cached_move = None;
+
+        match probe_hash(self.transposition_table, zobrist_hash, depth, alpha, beta) {
+            HashProbeOption::Some(val) => {
+                return val;
+            }
+            HashProbeOption::Move(mv) => {
+                best_cached_move = Some(mv);
+            }
+            _ => {}
+        }
+
+        self.searched_nodes += 1;
+
+        if depth == 0
+            || position.is_game_over()
+            || !self.is_thinking.load(std::sync::atomic::Ordering::SeqCst)
+        {
+            let val = quiesce(position, alpha, beta, &mut self.searched_nodes);
+            record_hash(
+                self.transposition_table,
+                zobrist_hash,
+                depth,
+                val,
+                TranspositionHashType::Exact,
+                None,
+            );
+            return val;
+        }
+
+        let mut legal_moves = position.legal_moves();
+        legal_moves.sort_by_key(|move_to_score| {
+            quick_score_move_for_sort(move_to_score, position, best_cached_move.as_ref())
+        });
+        let mut best_move = None;
+
+        for m in legal_moves {
+            let mut new_pos = position.clone();
+            new_pos.play_unchecked(m);
+
+            let score = -self.negamax(&new_pos, depth - 1, -beta, -alpha);
+
+            if score >= beta {
+                record_hash(
+                    self.transposition_table,
+                    zobrist_hash,
+                    depth,
+                    beta,
+                    TranspositionHashType::Beta,
+                    Some(m),
+                );
+                return beta;
+            }
+            if score > alpha {
+                transposition_type = TranspositionHashType::Exact;
+                alpha = score;
+                best_move = Some(m);
+            }
+        }
+
+        record_hash(
+            self.transposition_table,
+            zobrist_hash,
+            depth,
+            alpha,
+            transposition_type,
+            best_move,
+        );
+        alpha
     }
 }
 
-
+/*
 fn negamax(
     position: &Chess,
     depth: u64,
@@ -179,6 +249,7 @@ fn negamax(
     );
     alpha
 }
+*/
 
 fn quiesce(position: &Chess, mut alpha: i64, beta: i64, nodes: &mut u64) -> i64 {
     *nodes += 1;
