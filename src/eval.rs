@@ -1,6 +1,6 @@
 use std::sync::OnceLock;
 
-use shakmaty::{Chess, Color, Outcome, Position, Role};
+use shakmaty::{Chess, Color, Outcome, Position, Role, Square};
 
 // Values taken from: https://www.chessprogramming.org/PeSTO%27s_Evaluation_Function
 const PIECE_VALUES_MG: [i64; 6] = [
@@ -183,32 +183,28 @@ pub fn get_piece_eg_increase(role: Role) -> i64 {
     }
 }
 
-fn flip(square: usize) -> usize {
-    square ^ 56
-}
-
 // Color[PieceType[Square]]
 type PieceSquareTableType = [[[i64; 64]; 6]; 2];
 
-fn mg_table() -> &'static PieceSquareTableType {
+pub fn mg_table() -> &'static PieceSquareTableType {
     static MG_TABLE: OnceLock<PieceSquareTableType> = OnceLock::new();
     MG_TABLE.get_or_init(|| {
         let mut m = [[[0; 64]; 6]; 2];
 
-        for (piece_idx, _) in PIECE_VALUES_MG.iter().enumerate() {
-            for square in 0..64 {
+        for square in Square::ALL {
+            for (piece_idx, _) in PIECE_VALUES_MG.iter().enumerate() {
                 let mg_value = match piece_idx {
-                    0 => MG_PAWN_TABLE[square],
-                    1 => MG_KNIGHT_TABLE[square],
-                    2 => MG_BISHOP_TABLE[square],
-                    3 => MG_ROOK_TABLE[square],
-                    4 => MG_QUEEN_TABLE[square],
-                    5 => MG_KING_TABLE[square],
+                    0 => MG_PAWN_TABLE[square as usize],
+                    1 => MG_KNIGHT_TABLE[square as usize],
+                    2 => MG_BISHOP_TABLE[square as usize],
+                    3 => MG_ROOK_TABLE[square as usize],
+                    4 => MG_QUEEN_TABLE[square as usize],
+                    5 => MG_KING_TABLE[square as usize],
                     _ => unreachable!(),
                 } + PIECE_VALUES_MG[piece_idx];
 
-                m[Color::White as usize][piece_idx][square] = mg_value;
-                m[Color::Black as usize][piece_idx][flip(square)] = mg_value;
+                m[Color::White as usize][piece_idx][square.flip_vertical() as usize] = mg_value;
+                m[Color::Black as usize][piece_idx][square as usize] = mg_value;
             }
         } 
 
@@ -216,25 +212,25 @@ fn mg_table() -> &'static PieceSquareTableType {
     })
 }
 
-fn eg_table() -> &'static PieceSquareTableType {
+pub fn eg_table() -> &'static PieceSquareTableType {
     static EG_TABLE: OnceLock<PieceSquareTableType> = OnceLock::new();
     EG_TABLE.get_or_init(|| {
         let mut m = [[[0; 64]; 6]; 2];
 
-        for (piece_idx, _) in PIECE_VALUES_EG.iter().enumerate() {
-            for square in 0..64 {
+        for square in Square::ALL {
+            for (piece_idx, _) in PIECE_VALUES_EG.iter().enumerate() {
                 let eg_value = match piece_idx {
-                    0 => EG_PAWN_TABLE[square],
-                    1 => EG_KNIGHT_TABLE[square],
-                    2 => EG_BISHOP_TABLE[square],
-                    3 => EG_ROOK_TABLE[square],
-                    4 => EG_QUEEN_TABLE[square],
-                    5 => EG_KING_TABLE[square],
+                    0 => EG_PAWN_TABLE[square as usize],
+                    1 => EG_KNIGHT_TABLE[square as usize],
+                    2 => EG_BISHOP_TABLE[square as usize],
+                    3 => EG_ROOK_TABLE[square as usize],
+                    4 => EG_QUEEN_TABLE[square as usize],
+                    5 => EG_KING_TABLE[square as usize],
                     _ => unreachable!(),
                 } + PIECE_VALUES_EG[piece_idx];
 
-                m[Color::White as usize][piece_idx][square] = eg_value;
-                m[Color::Black as usize][piece_idx][flip(square)] = eg_value;
+                m[Color::White as usize][piece_idx][square.flip_vertical() as usize] = eg_value;
+                m[Color::Black as usize][piece_idx][square as usize] = eg_value;
             }
         } 
 
@@ -266,13 +262,15 @@ pub fn evaluate(position: &Chess) -> i64 {
     let board = position.board();
 
     for (square, piece) in board {
+        // piece.color is 0 for Black and 1 for White
+        // piece.role is 1-indexed (1 for Pawn, 2 for Knight, etc.)
         mg_evals[piece.color as usize] += mg_table()[piece.color as usize][piece.role as usize - 1][square as usize];
         eg_evals[piece.color as usize] += eg_table()[piece.color as usize][piece.role as usize - 1][square as usize];
         game_phase += get_piece_eg_increase(piece.role);
     }
 
-    let mg_score = mg_evals[current_player_color as usize] - mg_evals[1 - current_player_color as usize];
-    let eg_score = eg_evals[current_player_color as usize] - eg_evals[1 - current_player_color as usize];
+    let mg_score = mg_evals[current_player_color as usize] - mg_evals[current_player_color.other() as usize];
+    let eg_score = eg_evals[current_player_color as usize] - eg_evals[current_player_color.other() as usize];
     let mg_phase = game_phase.min(24);
     let eg_phase = 24 - mg_phase;
 

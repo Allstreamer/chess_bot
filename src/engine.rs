@@ -236,11 +236,11 @@ impl<'a> Searcher<'a> {
 fn piece_capture_score(piece: Role) -> i64 {
     match piece {
         Role::Pawn => 100,
-        Role::Knight => 300,
-        Role::Bishop => 300,
+        Role::Knight => 320,
+        Role::Bishop => 330,
         Role::Rook => 500,
         Role::Queen => 900,
-        Role::King => 10000,
+        Role::King => 20000,
     }
 }
 
