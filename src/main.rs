@@ -11,7 +11,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 mod engine;
-use engine::next_move;
+use engine::Searcher;
 
 use crate::engine::TranspositionInformation;
 
@@ -202,25 +202,27 @@ impl EngineState {
         let handle = thread::spawn(move || {
             let mut transposition_table: HashMap<Zobrist64, TranspositionInformation> =
                 HashMap::new();
-            let mut best_move = next_move(
+            let mut searcher = Searcher::new(
                 &position_to_search,
                 1,
                 &is_thinking_clone_b,
                 None,
                 &mut transposition_table,
             );
+            let mut best_move = searcher.next_move();
             let mut depth: u64 = 2;
             loop {
                 if !is_thinking_clone_b.load(Ordering::SeqCst) {
                     break;
                 }
-                best_move = next_move(
+                let mut searcher = Searcher::new(
                     &position_to_search,
                     depth,
                     &is_thinking_clone_b,
                     Some(&best_move),
                     &mut transposition_table,
                 );
+                best_move = searcher.next_move();
                 depth += 1;
             }
 
