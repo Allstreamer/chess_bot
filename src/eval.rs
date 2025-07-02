@@ -266,14 +266,14 @@ pub fn evaluate(position: &Chess) -> i64 {
     let board = position.board();
 
     for (square, piece) in board {
-        mg_evals[piece.color as usize] += mg_table()[piece.color as usize][piece.role as usize][square as usize];
-        eg_evals[piece.color as usize] += eg_table()[piece.color as usize][piece.role as usize][square as usize];
+        mg_evals[piece.color as usize] += mg_table()[piece.color as usize][piece.role as usize - 1][square as usize];
+        eg_evals[piece.color as usize] += eg_table()[piece.color as usize][piece.role as usize - 1][square as usize];
         game_phase += get_piece_eg_increase(piece.role);
     }
 
     let mg_score = mg_evals[current_player_color as usize] - mg_evals[1 - current_player_color as usize];
     let eg_score = eg_evals[current_player_color as usize] - eg_evals[1 - current_player_color as usize];
-    let mg_phase = game_phase.max(24);
+    let mg_phase = game_phase.min(24);
     let eg_phase = 24 - mg_phase;
 
     (mg_score * mg_phase + eg_score * eg_phase) / 24
