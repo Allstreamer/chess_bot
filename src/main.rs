@@ -16,7 +16,7 @@ use engine::Searcher;
 use crate::engine::TranspositionInformation;
 
 #[rustfmt::skip]
-mod engine_hyperparams;
+mod eval;
 
 /// Holds the engine's state, primarily the current board position.
 struct EngineState {
