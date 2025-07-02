@@ -136,11 +136,25 @@ impl<'a> Searcher<'a> {
         });
         let mut best_move = None;
 
-        for m in legal_moves {
+        for (move_index, m) in legal_moves.iter().enumerate() {
             let mut new_pos = position.clone();
-            new_pos.play_unchecked(m);
+            new_pos.play_unchecked(*m);
 
-            let score = -self.negamax(&new_pos, depth - 1, -beta, -alpha);
+            let mut score;
+
+            // Late Move Reduction
+            if move_index >= 4 && depth >= 3 && m.capture().is_none() && !new_pos.checkers().any() {
+                // Search with reduced depth first
+                score = -self.negamax(&new_pos, depth - 2, -beta, -alpha);
+
+                // If it looks promising, re-search with full depth
+                if score > alpha {
+                    score = -self.negamax(&new_pos, depth - 1, -beta, -alpha);
+                }
+            } else {
+                // Normal full-depth search
+                score = -self.negamax(&new_pos, depth - 1, -beta, -alpha);
+            }
 
             if score >= beta {
                 record_hash(
@@ -149,14 +163,14 @@ impl<'a> Searcher<'a> {
                     depth,
                     beta,
                     TranspositionHashType::Beta,
-                    Some(m),
+                    Some(*m),
                 );
                 return beta;
             }
             if score > alpha {
                 transposition_type = TranspositionHashType::Exact;
                 alpha = score;
-                best_move = Some(m);
+                best_move = Some(*m);
             }
         }
 
