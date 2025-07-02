@@ -105,7 +105,7 @@ impl<'a> Searcher<'a> {
             || position.is_game_over()
             || !self.is_thinking.load(std::sync::atomic::Ordering::SeqCst)
         {
-            let val = quiesce(position, alpha, beta, &mut self.searched_nodes);
+            let val = self.quiesce(position, alpha, beta);
             record_hash(
                 self.transposition_table,
                 zobrist_hash,
@@ -115,6 +115,19 @@ impl<'a> Searcher<'a> {
                 None,
             );
             return val;
+        }
+
+        if depth >= 3
+            && !position.checkers().any()
+            && let Ok(null_pos) = position.clone().swap_turn()
+        {
+            // Search with reduced depth (typically depth - 3)
+            let null_score = -self.negamax(&null_pos, depth - 3, -beta, -beta + 1);
+
+            // If even doing nothing beats beta, we can prune
+            if null_score >= beta {
+                return beta;
+            }
         }
 
         let mut legal_moves = position.legal_moves();
@@ -157,145 +170,53 @@ impl<'a> Searcher<'a> {
         );
         alpha
     }
-}
 
-/*
-fn negamax(
-    position: &Chess,
-    depth: u64,
-    nodes: &mut u64,
-    mut alpha: i64,
-    beta: i64,
-    is_thinking: &Arc<AtomicBool>,
-    transposition_table: &mut HashMap<Zobrist64, TranspositionInformation>,
-) -> i64 {
-    let mut transposition_type = TranspositionHashType::Alpha;
-    let zobrist_hash = position.zobrist_hash::<Zobrist64>(shakmaty::EnPassantMode::Legal);
-    let mut best_cached_move = None;
+    fn quiesce(&mut self, position: &Chess, mut alpha: i64, beta: i64) -> i64 {
+        self.searched_nodes += 1;
 
-    match probe_hash(transposition_table, zobrist_hash, depth, alpha, beta) {
-        HashProbeOption::Some(val) => {
-            return val;
+        let static_eval = evaluate(position);
+
+        // Stand Pat
+        let mut best_value = static_eval;
+        if best_value >= beta {
+            return best_value;
         }
-        HashProbeOption::Move(mv) => {
-            best_cached_move = Some(mv);
+        if best_value > alpha {
+            alpha = best_value;
         }
-        _ => {}
+
+        // Only consider capture moves for quiescence
+        let mut capture_moves: Vec<Move> = position
+            .legal_moves()
+            .into_iter()
+            .filter(|m| m.capture().is_some())
+            .collect();
+
+        // Optionally, sort captures by MVV-LVA or similar
+        capture_moves.sort_by_key(|m| {
+            // Most Valuable Victim - Least Valuable Attacker
+            -get_piece_base_score(m.capture().unwrap()) + get_piece_base_score(m.role())
+        });
+
+        for m in capture_moves {
+            let mut new_pos = position.clone();
+            new_pos.play_unchecked(m);
+
+            let score = -self.quiesce(&new_pos, -beta, -alpha);
+
+            if score >= beta {
+                return score;
+            }
+            if score > best_value {
+                best_value = score;
+            }
+            if score > alpha {
+                alpha = score;
+            }
+        }
+
+        best_value
     }
-
-    *nodes += 1;
-
-    if depth == 0
-        || position.is_game_over()
-        || !is_thinking.load(std::sync::atomic::Ordering::SeqCst)
-    {
-        let val = quiesce(position, alpha, beta, nodes);
-        record_hash(
-            transposition_table,
-            zobrist_hash,
-            depth,
-            val,
-            TranspositionHashType::Exact,
-            None,
-        );
-        return val;
-    }
-
-    let mut legal_moves = position.legal_moves();
-    legal_moves.sort_by_key(|move_to_score| {
-        quick_score_move_for_sort(move_to_score, position, best_cached_move.as_ref())
-    });
-    let mut best_move = None;
-
-    for m in legal_moves {
-        let mut new_pos = position.clone();
-        new_pos.play_unchecked(m);
-
-        let score = -negamax(
-            &new_pos,
-            depth - 1,
-            nodes,
-            -beta,
-            -alpha,
-            is_thinking,
-            transposition_table,
-        );
-
-        if score >= beta {
-            record_hash(
-                transposition_table,
-                zobrist_hash,
-                depth,
-                beta,
-                TranspositionHashType::Beta,
-                best_move,
-            );
-            return beta;
-        }
-        if score > alpha {
-            transposition_type = TranspositionHashType::Exact;
-            alpha = score;
-            best_move = Some(m);
-        }
-    }
-
-    record_hash(
-        transposition_table,
-        zobrist_hash,
-        depth,
-        alpha,
-        transposition_type,
-        best_move,
-    );
-    alpha
-}
-*/
-
-fn quiesce(position: &Chess, mut alpha: i64, beta: i64, nodes: &mut u64) -> i64 {
-    *nodes += 1;
-
-    let static_eval = evaluate(position);
-
-    // Stand Pat
-    let mut best_value = static_eval;
-    if best_value >= beta {
-        return best_value;
-    }
-    if best_value > alpha {
-        alpha = best_value;
-    }
-
-    // Only consider capture moves for quiescence
-    let mut capture_moves: Vec<Move> = position
-        .legal_moves()
-        .into_iter()
-        .filter(|m| m.capture().is_some())
-        .collect();
-
-    // Optionally, sort captures by MVV-LVA or similar
-    capture_moves.sort_by_key(|m| {
-        // Most Valuable Victim - Least Valuable Attacker
-        -get_piece_base_score(m.capture().unwrap()) + get_piece_base_score(m.role())
-    });
-
-    for m in capture_moves {
-        let mut new_pos = position.clone();
-        new_pos.play_unchecked(m);
-
-        let score = -quiesce(&new_pos, -beta, -alpha, nodes);
-
-        if score >= beta {
-            return score;
-        }
-        if score > best_value {
-            best_value = score;
-        }
-        if score > alpha {
-            alpha = score;
-        }
-    }
-
-    best_value
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
