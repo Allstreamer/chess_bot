@@ -25,49 +25,70 @@ pub struct TranspositionInformation {
     transposition_type: TranspositionHashType,
 }
 
-/// Entry point for the chess engine to search for the best move.
-pub fn next_move(
-    position: &Chess,
-    depth: u64,
-    is_thinking: &Arc<AtomicBool>,
-    last_best_move: Option<&Move>,
-    transposition_table: &mut HashMap<Zobrist64, TranspositionInformation>,
-) -> Move {
-    let mut legal_moves = position.legal_moves();
-    legal_moves.sort_by_key(|move_to_score| {
-        quick_score_move_for_sort(move_to_score, position, last_best_move)
-    });
+pub struct Searcher<'a> {
+    position: &'a Chess,
+    target_depth: u64,
+    is_thinking: &'a Arc<AtomicBool>,
+    last_best_move: Option<&'a Move>,
+    transposition_table: &'a mut HashMap<Zobrist64, TranspositionInformation>,
+}
 
-    // Find the move that maximizes the evaluation (piece count)
-    let mut nodes = 0;
-    let mut best_move = None;
-    let mut alpha = NEGATIVE_INFINITY;
-    let beta = POSITIVE_INFINITY;
-
-    for legal_move in &legal_moves {
-        let mut new_position = position.clone();
-        new_position.play_unchecked(*legal_move);
-        let score = -negamax(
-            &new_position,
-            depth - 1,
-            &mut nodes,
-            -beta,
-            -alpha,
+impl<'a> Searcher<'a> {
+    pub fn new(
+        position: &'a Chess,
+        target_depth: u64,
+        is_thinking: &'a Arc<AtomicBool>,
+        last_best_move: Option<&'a Move>,
+        transposition_table: &'a mut HashMap<Zobrist64, TranspositionInformation>,
+    ) -> Self {
+        Self {
+            position,
+            target_depth,
             is_thinking,
+            last_best_move,
             transposition_table,
-        );
-        if score > alpha {
-            alpha = score;
-            best_move = Some(*legal_move);
-        }
-        if !is_thinking.load(std::sync::atomic::Ordering::SeqCst) {
-            break;
         }
     }
 
-    println!("info depth {depth} score cp {alpha} nodes {nodes}");
-    best_move.expect("No legal moves found")
+    /// Entry point for the chess engine to search for the best move.
+    pub fn next_move(&mut self) -> Move {
+        let mut legal_moves = self.position.legal_moves();
+        legal_moves.sort_by_key(|move_to_score| {
+            quick_score_move_for_sort(move_to_score, self.position, self.last_best_move)
+        });
+
+        // Find the move that maximizes the evaluation (piece count)
+        let mut nodes = 0;
+        let mut best_move = None;
+        let mut alpha = NEGATIVE_INFINITY;
+        let beta = POSITIVE_INFINITY;
+
+        for legal_move in &legal_moves {
+            let mut new_position = self.position.clone();
+            new_position.play_unchecked(*legal_move);
+            let score = -negamax(
+                &new_position,
+                self.target_depth - 1,
+                &mut nodes,
+                -beta,
+                -alpha,
+                self.is_thinking,
+                self.transposition_table,
+            );
+            if score > alpha {
+                alpha = score;
+                best_move = Some(*legal_move);
+            }
+            if !self.is_thinking.load(std::sync::atomic::Ordering::SeqCst) {
+                break;
+            }
+        }
+
+        println!("info depth {} score cp {alpha} nodes {nodes}", self.target_depth);
+        best_move.expect("No legal moves found")
+    }
 }
+
 
 fn negamax(
     position: &Chess,
