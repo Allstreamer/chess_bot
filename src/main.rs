@@ -24,6 +24,7 @@ struct EngineState {
     is_thinking: Arc<AtomicBool>,
     thinking_thread: Option<thread::JoinHandle<()>>,
     nickname: String,
+    uci_chess960: bool,
 }
 
 impl EngineState {
@@ -33,6 +34,7 @@ impl EngineState {
             is_thinking: Arc::new(AtomicBool::new(false)),
             thinking_thread: None,
             nickname: "AllRustBot".to_owned(),
+            uci_chess960: false,
         }
     }
 
@@ -73,6 +75,9 @@ impl EngineState {
 
                 if option_name.eq_ignore_ascii_case("nick") {
                     self.nickname = option_value;
+                } else if option_name.eq_ignore_ascii_case("UCI_Chess960") {
+                    // Accept "true"/"false" (case-insensitive)
+                    self.uci_chess960 = option_value.eq_ignore_ascii_case("true");
                 }
                 // Handle other options with values here
             }
@@ -85,6 +90,7 @@ impl EngineState {
         println!("id name {}", self.nickname);
         println!("id author All");
         println!("option name nick type string default {}", self.nickname);
+        println!("option name UCI_Chess960 type check default {}", self.uci_chess960);
         println!("uciok");
     }
 
@@ -119,8 +125,15 @@ impl EngineState {
             };
             let fen_str = fen_tokens.join(" ");
             let fen: shakmaty::fen::Fen = fen_str.parse().expect("Failed to parse FEN");
+
+            let castle_type = if self.uci_chess960 {
+                shakmaty::CastlingMode::Chess960
+            }else {
+                shakmaty::CastlingMode::Standard
+            };
+
             current_pos = fen
-                .into_position(shakmaty::CastlingMode::Standard)
+                .into_position(castle_type)
                 .expect("Invalid FEN");
         } else {
             // Invalid position command
