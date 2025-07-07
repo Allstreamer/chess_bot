@@ -90,7 +90,10 @@ impl EngineState {
         println!("id name {}", self.nickname);
         println!("id author All");
         println!("option name nick type string default {}", self.nickname);
-        println!("option name UCI_Chess960 type check default {}", self.uci_chess960);
+        println!(
+            "option name UCI_Chess960 type check default {}",
+            self.uci_chess960
+        );
         println!("uciok");
     }
 
@@ -128,13 +131,11 @@ impl EngineState {
 
             let castle_type = if self.uci_chess960 {
                 shakmaty::CastlingMode::Chess960
-            }else {
+            } else {
                 shakmaty::CastlingMode::Standard
             };
 
-            current_pos = fen
-                .into_position(castle_type)
-                .expect("Invalid FEN");
+            current_pos = fen.into_position(castle_type).expect("Invalid FEN");
         } else {
             // Invalid position command
             return;
