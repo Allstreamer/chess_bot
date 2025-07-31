@@ -4,29 +4,28 @@ use shakmaty::{Chess, Color, Outcome, Position, Role, Square};
 
 // Values taken from: https://www.chessprogramming.org/PeSTO%27s_Evaluation_Function
 const PIECE_VALUES_MG: [i64; 6] = [
-    82, // Pawn
-    337, // Knight
-    365, // Bishop
-    477, // Rook
+    82,   // Pawn
+    337,  // Knight
+    365,  // Bishop
+    477,  // Rook
     1025, // Queen
-    0, // King
+    0,    // King
 ];
 
 const PIECE_VALUES_EG: [i64; 6] = [
-    94, // Pawn
+    94,  // Pawn
     281, // Knight
     297, // Bishop
     512, // Rook
     936, // Queen
-    0, // King
+    0,   // King
 ];
 
-pub const MATE_SCORE: i64 =             100_000_000;
+const BISHOP_PAIR_BONUS: i64 = 30; // A bonus for having two bishops
+pub const MATE_SCORE: i64 = 100_000_000;
 //   i64  Max                9_223_372_036_854_775_807
-pub const POSITIVE_INFINITY: i64 =  9_999_999_999_999;
+pub const POSITIVE_INFINITY: i64 = 9_999_999_999_999;
 pub const NEGATIVE_INFINITY: i64 = -POSITIVE_INFINITY;
-
-// ...existing code...
 
 #[rustfmt::skip]
 pub const MG_PAWN_TABLE: [i64; 64] = [
@@ -206,7 +205,7 @@ pub fn mg_table() -> &'static PieceSquareTableType {
                 m[Color::White as usize][piece_idx][square.flip_vertical() as usize] = mg_value;
                 m[Color::Black as usize][piece_idx][square as usize] = mg_value;
             }
-        } 
+        }
 
         m
     })
@@ -232,7 +231,7 @@ pub fn eg_table() -> &'static PieceSquareTableType {
                 m[Color::White as usize][piece_idx][square.flip_vertical() as usize] = eg_value;
                 m[Color::Black as usize][piece_idx][square as usize] = eg_value;
             }
-        } 
+        }
 
         m
     })
@@ -259,18 +258,36 @@ pub fn evaluate(position: &Chess) -> i64 {
     let mut mg_evals = [0i64; 2];
     let mut eg_evals = [0i64; 2];
     let mut game_phase = 0;
+    let mut bishop_counts = [0, 0];
     let board = position.board();
 
     for (square, piece) in board {
+        if piece.role == Role::Bishop {
+            bishop_counts[piece.color as usize] += 1;
+        }
+
         // piece.color is 0 for Black and 1 for White
         // piece.role is 1-indexed (1 for Pawn, 2 for Knight, etc.)
-        mg_evals[piece.color as usize] += mg_table()[piece.color as usize][piece.role as usize - 1][square as usize];
-        eg_evals[piece.color as usize] += eg_table()[piece.color as usize][piece.role as usize - 1][square as usize];
+        mg_evals[piece.color as usize] +=
+            mg_table()[piece.color as usize][piece.role as usize - 1][square as usize];
+        eg_evals[piece.color as usize] +=
+            eg_table()[piece.color as usize][piece.role as usize - 1][square as usize];
         game_phase += get_piece_eg_increase(piece.role);
     }
 
-    let mg_score = mg_evals[current_player_color as usize] - mg_evals[current_player_color.other() as usize];
-    let eg_score = eg_evals[current_player_color as usize] - eg_evals[current_player_color.other() as usize];
+    // Add bishop pair bonus
+    if bishop_counts[Color::White as usize] >= 2 {
+        mg_evals[Color::White as usize] += BISHOP_PAIR_BONUS;
+        eg_evals[Color::White as usize] += BISHOP_PAIR_BONUS;
+    }
+    if bishop_counts[Color::Black as usize] >= 2 {
+        mg_evals[Color::Black as usize] += BISHOP_PAIR_BONUS;
+        eg_evals[Color::Black as usize] += BISHOP_PAIR_BONUS;
+    }
+    let mg_score =
+        mg_evals[current_player_color as usize] - mg_evals[current_player_color.other() as usize];
+    let eg_score =
+        eg_evals[current_player_color as usize] - eg_evals[current_player_color.other() as usize];
     let mg_phase = game_phase.min(24);
     let eg_phase = 24 - mg_phase;
 
