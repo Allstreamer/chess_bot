@@ -346,7 +346,6 @@ mod test {
     use crate::eval::evaluate;
 
     use super::*;
-    // use rand::prelude::*;
     use shakmaty::{CastlingMode, fen};
 
     #[test]
@@ -374,42 +373,4 @@ mod test {
             assert!(evaluate(&pos) < 0);
         }
     }
-
-    // #[test]
-    // fn test_evaluations_are_equivalent() {
-    //     // 1. Initialize dependencies
-    //     let mut rng = thread_rng();
-    //     for i in 0..10_000_000 {
-    //         let mut pos = Chess::default();
-
-    //         // 2. Generate a random position by playing a series of random legal moves
-    //         // We play 40 half-moves (20 full moves) to get a reasonably complex position.
-    //         for _ in 0..=rng.gen_range(40..=80) {
-    //             let moves = pos.legal_moves();
-    //             if moves.is_empty() {
-    //                 // Game is over (checkmate or stalemate), stop making moves.
-    //                 break;
-    //             }
-
-    //             // Select a random move from the list of legal moves
-    //             if let Some(random_move) = moves.choose(&mut rng) {
-    //                 pos.play_unchecked(*random_move);
-    //             }
-    //         }
-
-    //         // 3. Get the FEN representation for debugging purposes.
-    //         // If the test fails, this will be printed, allowing you to replicate the exact position.
-
-    //         // 4. Evaluate the final random position with both functions
-    //         let score_original = evaluate(&pos);
-    //         let score_simple = evaluate_new(&pos);
-
-    //         // 5. Assert that the scores are identical
-    //         assert_eq!(
-    //             score_original, score_simple,
-    //             "\n{} Evaluation functions returned different scores for the same position.\n  - FEN: {}\n  - Original Score: {}\n  - Simple Score: {}",
-    //             i, fen::Fen::from_position(&pos, shakmaty::EnPassantMode::Legal).to_string(), score_original, score_simple
-    //         );
-    //     }
-    // }
 }
