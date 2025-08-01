@@ -21,6 +21,22 @@ const PIECE_VALUES_EG: [i64; 6] = [
     0,   // King
 ];
 
+// Pawn structure bonuses/penalties
+const DOUBLED_PAWN_PENALTY: i64 = -10;
+const ISOLATED_PAWN_PENALTY: i64 = -15;
+const PASSED_PAWN_BONUS: i64 = 20;
+const PAWN_CHAIN_BONUS: i64 = 5;
+
+// King safety bonuses/penalties
+const KING_SAFETY_BONUS: i64 = 20;
+const KING_EXPOSURE_PENALTY: i64 = -30;
+
+// Mobility bonuses (per square controlled)
+const MOBILITY_BONUS_KNIGHT: i64 = 5;
+const MOBILITY_BONUS_BISHOP: i64 = 4;
+const MOBILITY_BONUS_ROOK: i64 = 3;
+const MOBILITY_BONUS_QUEEN: i64 = 2;
+
 const BISHOP_PAIR_BONUS: i64 = 30; // A bonus for having two bishops
 pub const MATE_SCORE: i64 = 100_000_000;
 //   i64  Max                9_223_372_036_854_775_807
@@ -275,6 +291,27 @@ pub fn evaluate(position: &Chess) -> i64 {
         game_phase += get_piece_eg_increase(piece.role);
     }
 
+    // Add pawn structure evaluation
+    let pawn_structure_eval = evaluate_pawn_structure(position);
+    mg_evals[Color::White as usize] += pawn_structure_eval.0;
+    mg_evals[Color::Black as usize] += pawn_structure_eval.1;
+    eg_evals[Color::White as usize] += pawn_structure_eval.0;
+    eg_evals[Color::Black as usize] += pawn_structure_eval.1;
+
+    // Add king safety evaluation
+    let king_safety_eval = evaluate_king_safety(position);
+    mg_evals[Color::White as usize] += king_safety_eval.0;
+    mg_evals[Color::Black as usize] += king_safety_eval.1;
+    eg_evals[Color::White as usize] += king_safety_eval.0;
+    eg_evals[Color::Black as usize] += king_safety_eval.1;
+
+    // Add mobility evaluation
+    let mobility_eval = evaluate_mobility(position);
+    mg_evals[Color::White as usize] += mobility_eval.0;
+    mg_evals[Color::Black as usize] += mobility_eval.1;
+    eg_evals[Color::White as usize] += mobility_eval.0;
+    eg_evals[Color::Black as usize] += mobility_eval.1;
+
     // Add bishop pair bonus
     if bishop_counts[Color::White as usize] >= 2 {
         mg_evals[Color::White as usize] += BISHOP_PAIR_BONUS;
@@ -292,6 +329,426 @@ pub fn evaluate(position: &Chess) -> i64 {
     let eg_phase = 24 - mg_phase;
 
     (mg_score * mg_phase + eg_score * eg_phase) / 24
+}
+
+/// Evaluate pawn structure for both sides (doubled, isolated, passed pawns)
+fn evaluate_pawn_structure(position: &Chess) -> (i64, i64) {
+    let mut white_pawn_eval = 0;
+    let mut black_pawn_eval = 0;
+
+    let white_pawns = position.board().pawns() & position.board().white();
+    let black_pawns = position.board().pawns() & position.board().black();
+
+    // Evaluate doubled pawns (simplified approach)
+    for file in 0..8 {
+        let mut white_count = 0;
+        let mut black_count = 0;
+
+        // Count pawns on this file
+        for square in white_pawns {
+            if square.file() as u32 == file {
+                white_count += 1;
+            }
+        }
+        for square in black_pawns {
+            if square.file() as u32 == file {
+                black_count += 1;
+            }
+        }
+
+        if white_count > 1 {
+            white_pawn_eval += DOUBLED_PAWN_PENALTY * (white_count - 1) as i64;
+        }
+        if black_count > 1 {
+            black_pawn_eval += DOUBLED_PAWN_PENALTY * (black_count - 1) as i64;
+        }
+    }
+
+    // Evaluate isolated pawns (simplified approach)
+    for square in white_pawns {
+        let file = square.file() as u32;
+        let mut has_adjacent_pawn = false;
+
+        // Check adjacent files for pawns
+        for adj_square in white_pawns {
+            let adj_file = adj_square.file() as u32;
+            if adj_file != file && (adj_file as i32 - file as i32).abs() == 1 {
+                has_adjacent_pawn = true;
+                break;
+            }
+        }
+
+        if !has_adjacent_pawn {
+            white_pawn_eval += ISOLATED_PAWN_PENALTY;
+        }
+    }
+
+    for square in black_pawns {
+        let file = square.file() as u32;
+        let mut has_adjacent_pawn = false;
+
+        // Check adjacent files for pawns
+        for adj_square in black_pawns {
+            let adj_file = adj_square.file() as u32;
+            if adj_file != file && (adj_file as i32 - file as i32).abs() == 1 {
+                has_adjacent_pawn = true;
+                break;
+            }
+        }
+
+        if !has_adjacent_pawn {
+            black_pawn_eval += ISOLATED_PAWN_PENALTY;
+        }
+    }
+
+    // Evaluate passed pawns (simplified approach)
+    for square in white_pawns {
+        let file = square.file() as u32;
+        let rank = square.rank() as u32;
+        let mut is_passed = true;
+
+        // Check if there are black pawns ahead
+        for opp_square in black_pawns {
+            let opp_file = opp_square.file() as u32;
+            let opp_rank = opp_square.rank() as u32;
+
+            // Check if opponent pawn is ahead on same or adjacent file
+            if opp_rank > rank && (opp_file as i32 - file as i32).abs() <= 1 {
+                is_passed = false;
+                break;
+            }
+        }
+
+        if is_passed {
+            white_pawn_eval += PASSED_PAWN_BONUS;
+        }
+    }
+
+    for square in black_pawns {
+        let file = square.file() as u32;
+        let rank = square.rank() as u32;
+        let mut is_passed = true;
+
+        // Check if there are white pawns ahead
+        for opp_square in white_pawns {
+            let opp_file = opp_square.file() as u32;
+            let opp_rank = opp_square.rank() as u32;
+
+            // Check if opponent pawn is ahead on same or adjacent file
+            if opp_rank < rank && (opp_file as i32 - file as i32).abs() <= 1 {
+                is_passed = false;
+                break;
+            }
+        }
+
+        if is_passed {
+            black_pawn_eval += PASSED_PAWN_BONUS;
+        }
+    }
+
+    // Evaluate pawn chains (simplified approach)
+    for square in white_pawns {
+        let file = square.file() as u32;
+        let rank = square.rank() as u32;
+        let mut is_supported = false;
+
+        // Check if this pawn is supported by another pawn diagonally
+        if rank > 0 {
+            // Check diagonally backward squares for supporting pawns
+            if file > 0 {
+                let support_square = Square::from_coords(
+                    shakmaty::File::new(file - 1),
+                    shakmaty::Rank::new(rank - 1),
+                );
+                for support_pawn in white_pawns {
+                    if support_pawn == support_square {
+                        is_supported = true;
+                        break;
+                    }
+                }
+            }
+            if file < 7 {
+                let support_square = Square::from_coords(
+                    shakmaty::File::new(file + 1),
+                    shakmaty::Rank::new(rank - 1),
+                );
+                for support_pawn in white_pawns {
+                    if support_pawn == support_square {
+                        is_supported = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if is_supported {
+            white_pawn_eval += PAWN_CHAIN_BONUS;
+        }
+    }
+
+    for square in black_pawns {
+        let file = square.file() as u32;
+        let rank = square.rank() as u32;
+        let mut is_supported = false;
+
+        // Check if this pawn is supported by another pawn diagonally
+        if rank < 7 {
+            // Check diagonally forward squares for supporting pawns
+            if file > 0 {
+                let support_square = Square::from_coords(
+                    shakmaty::File::new(file - 1),
+                    shakmaty::Rank::new(rank + 1),
+                );
+                for support_pawn in black_pawns {
+                    if support_pawn == support_square {
+                        is_supported = true;
+                        break;
+                    }
+                }
+            }
+            if file < 7 {
+                let support_square = Square::from_coords(
+                    shakmaty::File::new(file + 1),
+                    shakmaty::Rank::new(rank + 1),
+                );
+                for support_pawn in black_pawns {
+                    if support_pawn == support_square {
+                        is_supported = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if is_supported {
+            black_pawn_eval += PAWN_CHAIN_BONUS;
+        }
+    }
+
+    (white_pawn_eval, black_pawn_eval)
+}
+
+/// Evaluate king safety for both sides
+fn evaluate_king_safety(position: &Chess) -> (i64, i64) {
+    let mut white_king_eval = 0;
+    let mut black_king_eval = 0;
+
+    // Find king positions
+    let white_king_square = position.board().king_of(Color::White);
+    let black_king_square = position.board().king_of(Color::Black);
+
+    if let (Some(white_king), Some(black_king)) = (white_king_square, black_king_square) {
+        // Check if kings are in the center (more exposed)
+        let white_king_file = white_king.file() as u32;
+        let black_king_file = black_king.file() as u32;
+
+        // Kings on center files (d, e, f) are more exposed
+        if (3..6).contains(&white_king_file) {
+            white_king_eval += KING_EXPOSURE_PENALTY;
+        }
+        if (3..6).contains(&black_king_file) {
+            black_king_eval += KING_EXPOSURE_PENALTY;
+        }
+
+        // Count friendly pieces near the king (more pieces = safer)
+        let mut white_friendly_count = 0;
+        let mut black_friendly_count = 0;
+
+        // Count pieces near white king
+        for square in position.board().white() {
+            let file_diff = (square.file() as i32 - white_king.file() as i32).abs();
+            let rank_diff = (square.rank() as i32 - white_king.rank() as i32).abs();
+            if file_diff <= 2 && rank_diff <= 2 {
+                white_friendly_count += 1;
+            }
+        }
+
+        // Count pieces near black king
+        for square in position.board().black() {
+            let file_diff = (square.file() as i32 - black_king.file() as i32).abs();
+            let rank_diff = (square.rank() as i32 - black_king.rank() as i32).abs();
+            if file_diff <= 2 && rank_diff <= 2 {
+                black_friendly_count += 1;
+            }
+        }
+
+        white_king_eval += white_friendly_count * KING_SAFETY_BONUS;
+        black_king_eval += black_friendly_count * KING_SAFETY_BONUS;
+    }
+
+    (white_king_eval, black_king_eval)
+}
+
+/// Evaluate piece mobility for both sides
+fn evaluate_mobility(position: &Chess) -> (i64, i64) {
+    let mut white_mobility_eval = 0;
+    let mut black_mobility_eval = 0;
+
+    // Get all pieces for each side
+    let white_pieces = position.board().white();
+    let black_pieces = position.board().black();
+
+    // Evaluate mobility for white pieces
+    for square in white_pieces {
+        if let Some(piece) = position.board().role_at(square) {
+            let mobility = get_piece_mobility(square, piece, position, Color::White);
+            match piece {
+                Role::Knight => white_mobility_eval += mobility * MOBILITY_BONUS_KNIGHT,
+                Role::Bishop => white_mobility_eval += mobility * MOBILITY_BONUS_BISHOP,
+                Role::Rook => white_mobility_eval += mobility * MOBILITY_BONUS_ROOK,
+                Role::Queen => white_mobility_eval += mobility * MOBILITY_BONUS_QUEEN,
+                _ => (), // Pawns and kings don't get mobility bonus in this simple implementation
+            }
+        }
+    }
+
+    // Evaluate mobility for black pieces
+    for square in black_pieces {
+        if let Some(piece) = position.board().role_at(square) {
+            let mobility = get_piece_mobility(square, piece, position, Color::Black);
+            match piece {
+                Role::Knight => black_mobility_eval += mobility * MOBILITY_BONUS_KNIGHT,
+                Role::Bishop => black_mobility_eval += mobility * MOBILITY_BONUS_BISHOP,
+                Role::Rook => black_mobility_eval += mobility * MOBILITY_BONUS_ROOK,
+                Role::Queen => black_mobility_eval += mobility * MOBILITY_BONUS_QUEEN,
+                _ => (), // Pawns and kings don't get mobility bonus in this simple implementation
+            }
+        }
+    }
+
+    (white_mobility_eval, black_mobility_eval)
+}
+
+/// Get the mobility of a piece (number of legal moves it can make)
+fn get_piece_mobility(square: Square, piece: Role, position: &Chess, color: Color) -> i64 {
+    let mut mobility = 0;
+
+    // For each piece type, count the number of squares it can attack/occupy
+    match piece {
+        Role::Knight => {
+            // Knight moves in an L-shape: 8 possible directions
+            let knight_moves = [
+                (2, 1),
+                (2, -1),
+                (-2, 1),
+                (-2, -1),
+                (1, 2),
+                (1, -2),
+                (-1, 2),
+                (-1, -2),
+            ];
+
+            for &(file_offset, rank_offset) in &knight_moves {
+                let new_file = square.file() as i32 + file_offset;
+                let new_rank = square.rank() as i32 + rank_offset;
+
+                if (0..8).contains(&new_file) && (0..8).contains(&new_rank) {
+                    // Check if the square is not occupied by a friendly piece
+                    let target_square = Square::from_coords(
+                        shakmaty::File::new(new_file as u32),
+                        shakmaty::Rank::new(new_rank as u32),
+                    );
+
+                    // Check if square is occupied by a friendly piece
+                    let occupied = position.board().occupied();
+                    let friendly = position.board().white();
+                    let is_friendly_occupied = if color == Color::White {
+                        (friendly & occupied).contains(target_square)
+                    } else {
+                        let black = position.board().black();
+                        (black & occupied).contains(target_square)
+                    };
+
+                    if !is_friendly_occupied {
+                        mobility += 1;
+                    }
+                }
+            }
+        }
+        Role::Bishop => {
+            // Bishop moves diagonally in 4 directions
+            let directions: &[(i32, i32)] = &[(1, 1), (1, -1), (-1, 1), (-1, -1)];
+            mobility += count_ray_mobility(square, directions, position, color);
+        }
+        Role::Rook => {
+            // Rook moves horizontally and vertically in 4 directions
+            let directions: &[(i32, i32)] = &[(1, 0), (-1, 0), (0, 1), (0, -1)];
+            mobility += count_ray_mobility(square, directions, position, color);
+        }
+        Role::Queen => {
+            // Queen moves in 8 directions (bishop + rook)
+            let directions: &[(i32, i32)] = &[
+                (1, 0),
+                (-1, 0),
+                (0, 1),
+                (0, -1),
+                (1, 1),
+                (1, -1),
+                (-1, 1),
+                (-1, -1),
+            ];
+            mobility += count_ray_mobility(square, directions, position, color);
+        }
+        _ => (), // Other pieces don't get mobility in this simple implementation
+    }
+
+    mobility
+}
+
+/// Count mobility along rays (for sliding pieces)
+fn count_ray_mobility(
+    square: Square,
+    directions: &[(i32, i32)],
+    position: &Chess,
+    color: Color,
+) -> i64 {
+    let mut mobility = 0;
+    let occupied = position.board().occupied();
+    let friendly = if color == Color::White {
+        position.board().white()
+    } else {
+        position.board().black()
+    };
+    let opponent = if color == Color::White {
+        position.board().black()
+    } else {
+        position.board().white()
+    };
+
+    for &(file_offset, rank_offset) in directions {
+        let mut current_file = square.file() as i32;
+        let mut current_rank = square.rank() as i32;
+
+        loop {
+            current_file += file_offset;
+            current_rank += rank_offset;
+
+            // Check if we're still on the board
+            if !(0..8).contains(&current_file) || !(0..8).contains(&current_rank) {
+                break;
+            }
+
+            let target_square = Square::from_coords(
+                shakmaty::File::new(current_file as u32),
+                shakmaty::Rank::new(current_rank as u32),
+            );
+
+            // If we hit a friendly piece, stop
+            if (friendly & occupied).contains(target_square) {
+                break;
+            }
+
+            // Count this square as mobile
+            mobility += 1;
+
+            // If we hit an enemy piece, stop (but we still count this square)
+            if (opponent & occupied).contains(target_square) {
+                break;
+            }
+        }
+    }
+
+    mobility
 }
 
 #[cfg(test)]
