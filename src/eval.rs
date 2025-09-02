@@ -22,6 +22,10 @@ const PIECE_VALUES_EG: [i64; 6] = [
 ];
 
 const BISHOP_PAIR_BONUS: i64 = 30; // A bonus for having two bishops
+const MOBILITY_WEIGHT: i64 = 2; // Weight for piece mobility
+const KING_SAFETY_WEIGHT: i64 = 5; // Weight for king safety evaluation
+const ISOLATED_PAWN_PENALTY: i64 = 15; // Penalty for isolated pawns
+const DOUBLED_PAWN_PENALTY: i64 = 10; // Penalty for doubled pawns
 pub const MATE_SCORE: i64 = 100_000_000;
 //   i64  Max                9_223_372_036_854_775_807
 pub const POSITIVE_INFINITY: i64 = 9_999_999_999_999;
@@ -237,6 +241,221 @@ pub fn eg_table() -> &'static PieceSquareTableType {
     })
 }
 
+/// Assesses the complexity of a chess position for time management purposes.
+/// Returns a complexity score where higher values indicate more complex positions.
+pub fn assess_position_complexity(position: &Chess) -> f64 {
+    let mut complexity = 0.0;
+    
+    // Base complexity from number of legal moves
+    let legal_moves_count = position.legal_moves().len();
+    complexity += (legal_moves_count as f64) * 0.1;
+    
+    // Complexity from material balance - closer games are more complex
+    let eval = evaluate(position);
+    let material_balance_factor = 1.0 - (eval.abs() as f64 / 500.0).min(1.0);
+    complexity += material_balance_factor * 2.0;
+    
+    // Complexity from game phase - middle game is most complex
+    let board = position.board();
+    let mut total_material = 0;
+    for (_, piece) in board {
+        total_material += get_piece_eg_increase(piece.role);
+    }
+    
+    // Peak complexity around middle game (12-18 material points)
+    let phase_complexity = if total_material >= 12 && total_material <= 18 {
+        2.0
+    } else if total_material >= 8 && total_material <= 24 {
+        1.5
+    } else {
+        1.0
+    };
+    complexity += phase_complexity;
+    
+    // Add complexity if in check (tactical positions)
+    if position.checkers().any() {
+        complexity += 1.5;
+    }
+    
+    // Add complexity based on tactical threats (captures available)
+    let capture_count = position.legal_moves().iter()
+        .filter(|m| m.capture().is_some())
+        .count();
+    complexity += (capture_count as f64) * 0.2;
+    
+    complexity.max(1.0) // Minimum complexity of 1.0
+}
+
+/// Evaluates piece mobility - how many squares pieces can move to
+fn evaluate_mobility(position: &Chess, color: Color) -> i64 {
+    let mut mobility = 0;
+    let board = position.board();
+    
+    for (square, piece) in board {
+        if piece.color != color {
+            continue;
+        }
+        
+        let piece_mobility = match piece.role {
+            Role::Knight => {
+                board.attacks_from(square).count() as i64
+            },
+            Role::Bishop => {
+                board.attacks_from(square).count() as i64
+            },
+            Role::Rook => {
+                board.attacks_from(square).count() as i64
+            },
+            Role::Queen => {
+                (board.attacks_from(square).count() as i64) / 2
+            },
+            _ => 0, // Don't count pawn and king mobility this way
+        };
+        
+        mobility += piece_mobility;
+    }
+    
+    mobility * MOBILITY_WEIGHT
+}
+
+/// Evaluates king safety by checking pawn shelter and enemy piece attacks
+fn evaluate_king_safety(position: &Chess, color: Color) -> i64 {
+    let board = position.board();
+    let king_square = board.king_of(color);
+    
+    if king_square.is_none() {
+        return -1000; // No king is very bad
+    }
+    
+    let king_square = king_square.unwrap();
+    let mut safety_score = 0;
+    
+    // Evaluate pawn shelter in front of king
+    let king_file = king_square.file();
+    let direction = if color == Color::White { 1 } else { -1 };
+    let king_rank = king_square.rank() as i8;
+    
+    // Check pawn shelter on king's file and adjacent files
+    for file_offset in -1..=1 {
+        if let Some(file) = king_file.offset(file_offset) {
+            // Look for friendly pawns in front of king (1-2 ranks ahead)
+            for rank_offset in 1..=2 {
+                let target_rank = king_rank + (direction * rank_offset);
+                if target_rank >= 0 && target_rank < 8 {
+                    let rank = shakmaty::Rank::new(target_rank as u32);
+                    let target_square = Square::from_coords(file, rank);
+                    if let Some(piece) = board.piece_at(target_square) {
+                        if piece.color == color && piece.role == Role::Pawn {
+                            safety_score += 10; // Pawn shelter bonus
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Penalty for enemy pieces attacking near the king
+    let king_area = board.attacks_from(king_square);
+    for attack_square in king_area {
+        let attackers = board.attacks_to(attack_square, color.other(), board.occupied());
+        safety_score -= (attackers.count() as i64) * 5;
+    }
+    
+    safety_score * KING_SAFETY_WEIGHT
+}
+
+/// Evaluates pawn structure (isolated and doubled pawns)
+fn evaluate_pawn_structure(position: &Chess, color: Color) -> i64 {
+    let board = position.board();
+    let mut pawn_structure_score = 0;
+    let mut pawn_files = [0u8; 8]; // Count pawns on each file
+    
+    // Count pawns on each file
+    for (square, piece) in board {
+        if piece.color == color && piece.role == Role::Pawn {
+            pawn_files[square.file() as usize] += 1;
+        }
+    }
+    
+    // Apply penalties for pawn structure issues
+    for file in 0..8 {
+        let pawn_count = pawn_files[file];
+        
+        if pawn_count > 0 {
+            // Check for isolated pawns (no pawns on adjacent files)
+            let has_neighbor = (file > 0 && pawn_files[file - 1] > 0) ||
+                              (file < 7 && pawn_files[file + 1] > 0);
+            
+            if !has_neighbor {
+                pawn_structure_score -= ISOLATED_PAWN_PENALTY * (pawn_count as i64);
+            }
+            
+            // Penalty for doubled pawns
+            if pawn_count > 1 {
+                pawn_structure_score -= DOUBLED_PAWN_PENALTY * (pawn_count as i64 - 1);
+            }
+        }
+    }
+    
+    pawn_structure_score
+}
+
+/// Determines if a position has obvious moves (opening, forced moves, winning positions)
+pub fn has_obvious_move(position: &Chess) -> bool {
+    let legal_moves = position.legal_moves();
+    
+    // Very few legal moves suggests forced play
+    if legal_moves.len() <= 2 {
+        return true;
+    }
+    
+    // Large material advantage suggests obvious moves
+    let eval = evaluate(position);
+    if eval.abs() > 800 { // More than a rook ahead
+        return true;
+    }
+    
+    // Check if in opening (many pieces on starting squares)
+    let board = position.board();
+    let mut pieces_on_starting_squares = 0;
+    let mut total_pieces = 0;
+    
+    for (square, piece) in board {
+        total_pieces += 1;
+        
+        // Check if piece is on starting position more precisely
+        let is_on_starting_square = match (piece.color, piece.role, square) {
+            // White pieces on starting squares
+            (Color::White, Role::Rook, shakmaty::Square::A1 | shakmaty::Square::H1) => true,
+            (Color::White, Role::Knight, shakmaty::Square::B1 | shakmaty::Square::G1) => true,
+            (Color::White, Role::Bishop, shakmaty::Square::C1 | shakmaty::Square::F1) => true,
+            (Color::White, Role::Queen, shakmaty::Square::D1) => true,
+            (Color::White, Role::King, shakmaty::Square::E1) => true,
+            // Black pieces on starting squares
+            (Color::Black, Role::Rook, shakmaty::Square::A8 | shakmaty::Square::H8) => true,
+            (Color::Black, Role::Knight, shakmaty::Square::B8 | shakmaty::Square::G8) => true,
+            (Color::Black, Role::Bishop, shakmaty::Square::C8 | shakmaty::Square::F8) => true,
+            (Color::Black, Role::Queen, shakmaty::Square::D8) => true,
+            (Color::Black, Role::King, shakmaty::Square::E8) => true,
+            // Pawns on 2nd/7th rank
+            (Color::White, Role::Pawn, square) if square.rank() == shakmaty::Rank::Second => true,
+            (Color::Black, Role::Pawn, square) if square.rank() == shakmaty::Rank::Seventh => true,
+            _ => false,
+        };
+        
+        if is_on_starting_square {
+            pieces_on_starting_squares += 1;
+        }
+    }
+    
+    // If more than 50% of pieces are still on starting squares, it's opening
+    if pieces_on_starting_squares > (total_pieces * 50) / 100 {
+        return true;
+    }
+    
+    false
+}
+
 /// Calculates a chess position's score from the players's perspective.
 /// A positive score means the player is ahead; a negative score means the opponent is ahead.
 pub fn evaluate(position: &Chess) -> i64 {
@@ -284,14 +503,33 @@ pub fn evaluate(position: &Chess) -> i64 {
         mg_evals[Color::Black as usize] += BISHOP_PAIR_BONUS;
         eg_evals[Color::Black as usize] += BISHOP_PAIR_BONUS;
     }
+    
+    // Calculate base positional score
     let mg_score =
         mg_evals[current_player_color as usize] - mg_evals[current_player_color.other() as usize];
     let eg_score =
         eg_evals[current_player_color as usize] - eg_evals[current_player_color.other() as usize];
     let mg_phase = game_phase.min(24);
     let eg_phase = 24 - mg_phase;
-
-    (mg_score * mg_phase + eg_score * eg_phase) / 24
+    
+    let mut total_score = (mg_score * mg_phase + eg_score * eg_phase) / 24;
+    
+    // Add mobility evaluation (more important in middlegame)
+    let mobility_score = evaluate_mobility(position, current_player_color) - 
+                        evaluate_mobility(position, current_player_color.other());
+    total_score += (mobility_score * mg_phase) / 24;
+    
+    // Add king safety evaluation (more important in middlegame)
+    let king_safety_score = evaluate_king_safety(position, current_player_color) - 
+                           evaluate_king_safety(position, current_player_color.other());
+    total_score += (king_safety_score * mg_phase) / 24;
+    
+    // Add pawn structure evaluation (important throughout the game)
+    let pawn_structure_score = evaluate_pawn_structure(position, current_player_color) - 
+                              evaluate_pawn_structure(position, current_player_color.other());
+    total_score += pawn_structure_score;
+    
+    total_score
 }
 
 #[cfg(test)]
