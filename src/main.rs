@@ -17,6 +17,7 @@ use crate::engine::TranspositionInformation;
 
 #[rustfmt::skip]
 mod eval;
+use eval::{assess_position_complexity, has_obvious_move};
 
 /// Holds the engine's state, primarily the current board position.
 struct EngineState {
@@ -208,9 +209,28 @@ impl EngineState {
             btime
         };
 
+        // Calculate dynamic time allocation based on position complexity
+        let base_time_divisor = 20; // Default: use 1/20th of available time
+        let complexity_score = assess_position_complexity(&position_to_search);
+        let has_obvious = has_obvious_move(&position_to_search);
+        
+        let time_multiplier = if has_obvious {
+            // Use less time for obvious moves
+            0.3 
+        } else {
+            // Use more time for complex positions
+            (complexity_score / 5.0).max(0.5).min(3.0)
+        };
+        
         let target_think_time = Duration::from_millis(match time {
-            Some(available_time) => available_time / 20,
-            None => 100,
+            Some(available_time) => {
+                let base_time = available_time / base_time_divisor;
+                ((base_time as f64) * time_multiplier) as u64
+            },
+            None => {
+                // When no time control, still apply complexity factor
+                ((100.0 * time_multiplier) as u64).max(50).min(1000)
+            },
         });
 
         let handle = thread::spawn(move || {
